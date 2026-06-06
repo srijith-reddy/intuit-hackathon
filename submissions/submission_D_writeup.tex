@@ -31,7 +31,7 @@ modelling assumptions fail, and each failure changed our approach.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.82\textwidth]{fig01_prior_score_threshold.png}
+\includegraphics[width=0.70\textwidth]{fig01_prior_score_threshold.png}
 \caption{The prior lender's approval rule is a sharp threshold at
 $\code{prior\_underwriter\_score}=0.273$. The approved and declined score
 distributions do not overlap (left), and the approval rate is a step function of the
@@ -78,12 +78,9 @@ shape ($S_b(90){=}1$) learned per credit band $b$.
 \textbf{PD model.} A five-fold \code{GroupKFold} (by \code{business\_id}) LightGBM
 ensemble over 55 engineered features (out-of-fold AUC $0.774$, Brier $0.117$),
 isotonic-calibrated. Features are deliberately buffer-centric: because loans are
-$\sim$1.3\% of annual revenue, default is cash-buffer bound rather than
-revenue bound (daily ACH draw $\approx\$420$ against a 10th-percentile cash buffer
-$\approx\$1{,}165$, negative 29\% of the time), so debt-service coverage,
-buffer-to-payment, overdrafts and credit utilization dominate. Every feature is a
-documented function of its declared parents---no opaque pipeline---so each driver is
-defensible to a regulator.
+$\sim$1.3\% of annual revenue, default is cash-buffer bound rather than revenue bound, so
+debt-service coverage, buffer-to-payment, overdrafts and credit utilization dominate---each
+a documented function of its declared parents, defensible to a regulator.
 
 \textbf{The timing shape is bimodal and we model it as such} (Figure~\ref{fig:traj}).
 Of all defaults, $77.5\%$ are missed-draw events over days $3$--$60$; the interval
@@ -95,7 +92,7 @@ day-90 mass---so $S_b(t)$ feeds both B and the per-loan $\E[t^*]$ used in A.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.6\textwidth]{fig03_cumulative_trajectory.png}
+\includegraphics[width=0.5\textwidth]{fig03_cumulative_trajectory.png}
 \caption{Pooled cumulative default rate by loan-age week: a concave rise through
 week~9, a flat stretch (weeks 9--12), and the day-90 open-balance cliff at week~13.
 Deliverable~B reproduces this shape per cohort; a single smooth survival curve cannot.}
@@ -143,10 +140,14 @@ everything else is held at its observed value; the provided
 stale-descendant bug. This makes our $\mathrm{do}(\cdot)$ a genuine structural
 perturbation rather than an unconstrained input edit.
 
-\textbf{We classify the intervenable features by causal status.} \emph{Manipulable
-causes}---\code{requested\_amount}, \code{aggregate\_credit\_utilization},
-\code{existing\_debt\_obligations}, \code{invoice\_payment\_delinquency\_rate}---are
-perturbed and propagated; the model sensitivity is a meaningful interventional effect.
+\textbf{We classify the intervenable features by causal status.} \emph{Mechanical
+causes} (\code{requested\_amount}) are perturbed and propagated through the registry at
+full strength. \emph{Confounded proxies}---bureau and bank-feed symptoms of latent health
+(utilization, delinquency, revenue and cash signals)---are not perturbed naively: we shrink
+each by an estimated causal fraction $\hat\lambda = \beta_{\text{adj}}/\beta_{\text{naive}}$
+(sibling-adjusted logistic; per-family $\hat\lambda \approx 0.52,\,0.43,\,0.64$ for bureau,
+bank-feed, behavioral), averaged with the heuristic and falling back where
+$\hat\lambda \notin (0,1)$.
 \emph{Self-reports}---\code{stated\_annual\_revenue}, \code{stated\_time\_in\_business}---are
 returned at their observational PD, because editing a number on the application does not
 change the borrower's type: when the claim does not cause default,
@@ -166,6 +167,19 @@ $0.273$ cutoff is a natural experiment supporting local causal validity. Several
 values lie outside observed support (e.g.\ \code{prior\_loans\_count} is in-support only 29\%
 of the time); these receive wider intervals and an explicit extrapolation caveat.
 
+\textbf{Model-class check.} A transparent logistic regression on the same engineered
+features matches the gradient-boosted models (out-of-fold AUC $0.775$ vs $0.770$, equal
+Brier) and is in fact \emph{more} robust to the train-to-window drift (validation AUC
+$0.759$ vs $0.751$)---evidence that the engineered space is approximately linearly
+sufficient and the drivers directly interpretable. Its standardized coefficients agree in
+sign with the SHAP ranking and univariate associations on eight of the top ten features;
+the two exceptions (\code{buffer\_to\_payment}, \code{debt\_to\_revenue}) are
+collinearity-driven partial-coefficient sign flips, which is exactly why we read drivers
+from SHAP over the de-correlated set rather than from raw linear coefficients. We evaluated
+and rejected sequence and transformer architectures: there is no sequential structure, the
+categoricals are low-cardinality, discrimination is data-limited at $\approx\!0.77$ AUC,
+and calibration---a scored component---favours the simpler, well-understood stack.
+
 \section{Calibration \& uncertainty quantification}
 
 \textbf{Point PD.} Isotonic calibration is \emph{refit on in-window validation} to correct
@@ -176,14 +190,13 @@ remains that calibration is valid on the approved manifold and extrapolated on d
 $\sigma$ is fold-ensemble disagreement and the width scale $\alpha$ is fit by five-fold
 \emph{cross-fit} on validation, so coverage reflects genuine out-of-sample calibration
 error rather than collapsing in-sample. Validated decile coverage is $\approx 0.90$ at mean
-width $\approx 0.06$---substantially tighter than an earlier over-wide ($\approx 100\%$
-coverage) configuration, directly addressing the brief's ``contain the truth without being
-needlessly wide.''
+width $\approx 0.06$, tighter than an earlier over-wide ($\approx 100\%$ coverage)
+configuration---the brief's ``contain the truth without being needlessly wide.''
 
 \textbf{Trajectory intervals (B).} A within-cohort bootstrap combined with a conformal band
-calibrated against the \emph{true} validation cohort trajectories (validation is labelled,
-matured, and in-window); validated coverage $\approx 0.92$. Out-of-support counterfactual
-intervals in C are widened by a further factor. Table~\ref{tab:val} summarizes the
+calibrated against the \emph{true} validation cohort trajectories; validated coverage
+$\approx 0.92$. Out-of-support counterfactual intervals in C are widened further.
+Table~\ref{tab:val} summarizes the
 validation evidence.
 
 \begin{table}[h]
@@ -206,22 +219,19 @@ interval coverage is out-of-sample (cross-fit / conformal).}
 
 \section{Limitations \& what we'd do differently}
 
-\textbf{Counterfactuals on non-causal channels are heuristic.} Self-report and immutable
-interventions use shrink/perturbation rather than a fully specified structural causal model;
-a learned SCM over the intervenable subgraph would be the principled upgrade, and C effects
-remain unverifiable since the queried applicants have no labels.
+\textbf{Self-report and immutable counterfactuals remain heuristic} (confounded proxies use
+the estimated $\hat\lambda$ above), and all C effects are unverifiable since the queried
+applicants have no labels.
 
-\textbf{Calibration rests on an approval-selected validation set.} Because a propensity model
-recovers approval with AUC $\approx 1.0$, approved and declined populations do not overlap;
-inverse-propensity reject inference is infeasible and only RD-style local extrapolation is
-available, which we defer. PD on the declined population---part of what A is scored on---is an
-extrapolation we cannot validate.
+\textbf{Calibration rests on an approval-selected validation set.} Approval is recoverable
+with AUC $\approx 1.0$, so approved and declined populations do not overlap: inverse-propensity
+reject inference is infeasible, only RD-style local extrapolation is available (deferred), and
+PD on declines---part of what A is scored on---cannot be validated.
 
-\textbf{The band-conditional shape and per-cohort level lean on the validation window.} Both
-transfer because validation and test share the identical 13 calendar weeks, but the small
-per-cohort samples ($n \approx 150$) inject some variance that more in-window data, or
-cross-fitting these corrections, would reduce. Finally, A remains marginally aggressive---a
-20\% upward PD shift still raises realized P\&L---so a slightly more conservative level would
-recover the last of the oracle gap.
+\textbf{The timing and cohort corrections lean on the validation window.} They transfer
+because validation and test share the identical 13 weeks, but small per-cohort samples
+($n \approx 150$) add variance that more in-window data would reduce. Finally, A is marginally
+aggressive (a 20\% upward PD shift still raises realized P\&L), so a slightly more conservative
+level would close the last of the oracle gap.
 
 \end{document}

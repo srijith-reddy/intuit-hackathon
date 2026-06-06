@@ -219,7 +219,22 @@ def build():
     naive_cf, _, _ = model.predict_calibrated(_engineer(cf[te.columns], art))
     # causal shrink toward observational PD + OOS interval widening
     shrink = q["feature_name"].map(_shrink_factor).to_numpy()
-    pcf = obs_pd + shrink * (naive_cf - obs_pd)
+    pcf_heur = obs_pd + shrink * (naive_cf - obs_pd)
+    # Part 4: for CONFOUNDED proxies (bureau/bank-feed symptoms of latent health),
+    # replace the heuristic full-strength perturbation with an estimated causal
+    # fraction lambda_hat = beta_adj/beta_naive (sibling-adjusted logistic; only proxies
+    # with lambda_hat in (0,1), else fall back to heuristic). Final = mean(heuristic, lambda).
+    lpath = PATHS.reports / "lambda_hat.csv"
+    if lpath.exists():
+        lt = pd.read_csv(lpath); lmap = dict(zip(lt.loc[lt.status == "use", "proxy"],
+                                                 lt.loc[lt.status == "use", "lambda_hat"]))
+        shrink_lam = q["feature_name"].map(lambda f: lmap.get(f, _shrink_factor(f))).to_numpy()
+        pcf_lam = obs_pd + shrink_lam * (naive_cf - obs_pd)
+        pcf = 0.5 * (pcf_heur + pcf_lam)
+        print(f"[C-λ] applied lambda_hat to {len(lmap)} confounded proxies; "
+              f"mean |Δ vs heuristic|={np.abs(pcf - pcf_heur).mean():.4f}")
+    else:
+        pcf = pcf_heur
     oos = np.array([not (supp.get(f, (-np.inf, np.inf))[0] <= v <= supp.get(f, (-np.inf, np.inf))[1])
                     for f, v in zip(q["feature_name"], pd.to_numeric(q["intervention_value"], errors="coerce"))])
     half = model.alpha * model.z90 * base_std * np.where(oos, 1.8, 1.0)
