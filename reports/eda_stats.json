@@ -1,0 +1,1091 @@
+{
+  "label_coverage": {
+    "train": {
+      "n": 85340,
+      "labeled": 51722,
+      "labeled_frac": 0.6061,
+      "default_rate_labeled": 0.1745
+    },
+    "validation": {
+      "n": 4489,
+      "labeled": 2551,
+      "labeled_frac": 0.5683,
+      "default_rate_labeled": 0.2062
+    },
+    "test": {
+      "n": 8817,
+      "labeled": 0,
+      "labeled_frac": 0.0,
+      "default_rate_labeled": null
+    }
+  },
+  "prior_decision_crosstab_train": {
+    "matured": {
+      "0": 0,
+      "1": 51722
+    },
+    "NaN": {
+      "0": 33618,
+      "1": 0
+    }
+  },
+  "prior_decision_crosstab_val": {
+    "matured": {
+      "0": 0,
+      "1": 2551
+    },
+    "NaN": {
+      "0": 1938,
+      "1": 0
+    }
+  },
+  "approved_vs_declined_top": [
+    {
+      "feature": "prior_underwriter_score",
+      "kind": "num",
+      "smd": 4.176,
+      "ks_stat": 1.0,
+      "ks_p": 0.0,
+      "appr_mean": 0.781,
+      "decl_mean": 0.073,
+      "abs_effect": 4.176
+    },
+    {
+      "feature": "prior_decision",
+      "kind": "cat",
+      "smd": NaN,
+      "ks_stat": 1.0,
+      "ks_p": 0.0,
+      "appr_mean": NaN,
+      "decl_mean": NaN,
+      "abs_effect": 1.0
+    },
+    {
+      "feature": "aggregate_credit_utilization",
+      "kind": "num",
+      "smd": -0.706,
+      "ks_stat": 0.275,
+      "ks_p": 0.0,
+      "appr_mean": 0.439,
+      "decl_mean": 0.597,
+      "abs_effect": 0.706
+    },
+    {
+      "feature": "invoice_payment_delinquency_rate",
+      "kind": "num",
+      "smd": -0.675,
+      "ks_stat": 0.277,
+      "ks_p": 0.0,
+      "appr_mean": 0.178,
+      "decl_mean": 0.273,
+      "abs_effect": 0.675
+    },
+    {
+      "feature": "observed_cash_balance_p10",
+      "kind": "num",
+      "smd": 0.668,
+      "ks_stat": 0.265,
+      "ks_p": 0.0,
+      "appr_mean": 1165.128,
+      "decl_mean": -757.147,
+      "abs_effect": 0.668
+    },
+    {
+      "feature": "owner_personal_credit_band",
+      "kind": "num",
+      "smd": 0.604,
+      "ks_stat": 0.24,
+      "ks_p": 0.0,
+      "appr_mean": 2.312,
+      "decl_mean": 1.496,
+      "abs_effect": 0.604
+    },
+    {
+      "feature": "requested_amount",
+      "kind": "num",
+      "smd": -0.509,
+      "ks_stat": 0.198,
+      "ks_p": 0.0,
+      "appr_mean": 23724.462,
+      "decl_mean": 26768.364,
+      "abs_effect": 0.509
+    },
+    {
+      "feature": "bookkeeping_recency_days",
+      "kind": "num",
+      "smd": -0.4,
+      "ks_stat": 0.171,
+      "ks_p": 0.0,
+      "appr_mean": 21.112,
+      "decl_mean": 25.296,
+      "abs_effect": 0.4
+    },
+    {
+      "feature": "payroll_regularity_score",
+      "kind": "num",
+      "smd": 0.375,
+      "ks_stat": 0.147,
+      "ks_p": 0.0,
+      "appr_mean": 0.54,
+      "decl_mean": 0.468,
+      "abs_effect": 0.375
+    },
+    {
+      "feature": "vintage_years",
+      "kind": "num",
+      "smd": 0.336,
+      "ks_stat": 0.13,
+      "ks_p": 0.0,
+      "appr_mean": 6.507,
+      "decl_mean": 5.142,
+      "abs_effect": 0.336
+    },
+    {
+      "feature": "observed_revenue_volatility",
+      "kind": "num",
+      "smd": -0.32,
+      "ks_stat": 0.142,
+      "ks_p": 0.0,
+      "appr_mean": 1.058,
+      "decl_mean": 1.263,
+      "abs_effect": 0.32
+    },
+    {
+      "feature": "stated_time_in_business",
+      "kind": "num",
+      "smd": 0.308,
+      "ks_stat": 0.119,
+      "ks_p": 0.0,
+      "appr_mean": 6.891,
+      "decl_mean": 5.648,
+      "abs_effect": 0.308
+    },
+    {
+      "feature": "account_age_days",
+      "kind": "num",
+      "smd": 0.292,
+      "ks_stat": 0.113,
+      "ks_p": 0.0,
+      "appr_mean": 1223.693,
+      "decl_mean": 986.982,
+      "abs_effect": 0.292
+    },
+    {
+      "feature": "owner_personal_credit_band",
+      "kind": "cat",
+      "smd": NaN,
+      "ks_stat": 0.283,
+      "ks_p": 0.0,
+      "appr_mean": NaN,
+      "decl_mean": NaN,
+      "abs_effect": 0.283
+    },
+    {
+      "feature": "requested_amount_to_observed_revenue",
+      "kind": "num",
+      "smd": -0.279,
+      "ks_stat": 0.118,
+      "ks_p": 0.0,
+      "appr_mean": 0.014,
+      "decl_mean": 0.016,
+      "abs_effect": 0.279
+    },
+    {
+      "feature": "observed_overdraft_count_3mo",
+      "kind": "num",
+      "smd": -0.248,
+      "ks_stat": 0.115,
+      "ks_p": 0.0,
+      "appr_mean": 0.391,
+      "decl_mean": 0.573,
+      "abs_effect": 0.248
+    },
+    {
+      "feature": "observed_revenue_trend_3mo",
+      "kind": "num",
+      "smd": 0.22,
+      "ks_stat": 0.093,
+      "ks_p": 0.0,
+      "appr_mean": 0.216,
+      "decl_mean": 0.038,
+      "abs_effect": 0.22
+    },
+    {
+      "feature": "days_since_last_external_decline",
+      "kind": "num",
+      "smd": 0.197,
+      "ks_stat": 0.077,
+      "ks_p": 0.0,
+      "appr_mean": 90.492,
+      "decl_mean": 71.389,
+      "abs_effect": 0.197
+    },
+    {
+      "feature": "recent_inquiries_count_6mo",
+      "kind": "num",
+      "smd": -0.19,
+      "ks_stat": 0.089,
+      "ks_p": 0.0,
+      "appr_mean": 0.539,
+      "decl_mean": 0.694,
+      "abs_effect": 0.19
+    },
+    {
+      "feature": "existing_debt_obligations",
+      "kind": "num",
+      "smd": -0.19,
+      "ks_stat": 0.085,
+      "ks_p": 0.0,
+      "appr_mean": 9083.239,
+      "decl_mean": 10064.578,
+      "abs_effect": 0.19
+    }
+  ],
+  "prior_score_threshold": {
+    "appr_score_mean": 0.781,
+    "decl_score_mean": 0.073,
+    "appr_score_min": 0.273,
+    "appr_score_max": 1.0,
+    "decl_score_min": 0.0,
+    "decl_score_max": 0.273,
+    "overlap_frac": 0.0,
+    "ks": 1.0,
+    "auc_score_predicts_approval": 1.0
+  },
+  "timing_structure": {
+    "n_labeled": 51722,
+    "n_default": 9024,
+    "dtd_min": 3.0,
+    "dtd_max": 90.0,
+    "dtd_mean": 43.1,
+    "dtd_median": 37.0,
+    "dtd_pre60_frac": 0.775,
+    "dtd_post60_frac": 0.225,
+    "obs_status_values": [
+      "matured"
+    ],
+    "repay_status_values": [
+      "paid_in_full",
+      "defaulted"
+    ],
+    "repay_min": 60.0,
+    "repay_max": 60.0,
+    "repay_mean": 60.0
+  },
+  "hazard_head": [
+    {
+      "day": 1,
+      "at_risk": 51722,
+      "defaults": 0,
+      "payoffs": 0,
+      "hazard": 0.0,
+      "cum_default_frac": 0.0
+    },
+    {
+      "day": 2,
+      "at_risk": 51722,
+      "defaults": 0,
+      "payoffs": 0,
+      "hazard": 0.0,
+      "cum_default_frac": 0.0
+    },
+    {
+      "day": 3,
+      "at_risk": 51722,
+      "defaults": 123,
+      "payoffs": 0,
+      "hazard": 0.00238,
+      "cum_default_frac": 0.00238
+    },
+    {
+      "day": 4,
+      "at_risk": 51599,
+      "defaults": 112,
+      "payoffs": 0,
+      "hazard": 0.00217,
+      "cum_default_frac": 0.00454
+    },
+    {
+      "day": 5,
+      "at_risk": 51487,
+      "defaults": 142,
+      "payoffs": 0,
+      "hazard": 0.00276,
+      "cum_default_frac": 0.00729
+    },
+    {
+      "day": 6,
+      "at_risk": 51345,
+      "defaults": 139,
+      "payoffs": 0,
+      "hazard": 0.00271,
+      "cum_default_frac": 0.00998
+    },
+    {
+      "day": 7,
+      "at_risk": 51206,
+      "defaults": 135,
+      "payoffs": 0,
+      "hazard": 0.00264,
+      "cum_default_frac": 0.01259
+    },
+    {
+      "day": 8,
+      "at_risk": 51071,
+      "defaults": 152,
+      "payoffs": 0,
+      "hazard": 0.00298,
+      "cum_default_frac": 0.01553
+    },
+    {
+      "day": 9,
+      "at_risk": 50919,
+      "defaults": 166,
+      "payoffs": 0,
+      "hazard": 0.00326,
+      "cum_default_frac": 0.01873
+    },
+    {
+      "day": 10,
+      "at_risk": 50753,
+      "defaults": 138,
+      "payoffs": 0,
+      "hazard": 0.00272,
+      "cum_default_frac": 0.0214
+    },
+    {
+      "day": 11,
+      "at_risk": 50615,
+      "defaults": 165,
+      "payoffs": 0,
+      "hazard": 0.00326,
+      "cum_default_frac": 0.02459
+    },
+    {
+      "day": 12,
+      "at_risk": 50450,
+      "defaults": 134,
+      "payoffs": 0,
+      "hazard": 0.00266,
+      "cum_default_frac": 0.02718
+    },
+    {
+      "day": 13,
+      "at_risk": 50316,
+      "defaults": 157,
+      "payoffs": 0,
+      "hazard": 0.00312,
+      "cum_default_frac": 0.03022
+    },
+    {
+      "day": 14,
+      "at_risk": 50159,
+      "defaults": 151,
+      "payoffs": 0,
+      "hazard": 0.00301,
+      "cum_default_frac": 0.03314
+    },
+    {
+      "day": 15,
+      "at_risk": 50008,
+      "defaults": 128,
+      "payoffs": 0,
+      "hazard": 0.00256,
+      "cum_default_frac": 0.03561
+    }
+  ],
+  "cohort_default_rates_val": [
+    {
+      "cohort_week": 1,
+      "n_labeled": 207,
+      "default_rate": 0.2077
+    },
+    {
+      "cohort_week": 2,
+      "n_labeled": 220,
+      "default_rate": 0.2318
+    },
+    {
+      "cohort_week": 3,
+      "n_labeled": 189,
+      "default_rate": 0.1958
+    },
+    {
+      "cohort_week": 4,
+      "n_labeled": 220,
+      "default_rate": 0.1682
+    },
+    {
+      "cohort_week": 5,
+      "n_labeled": 208,
+      "default_rate": 0.2596
+    },
+    {
+      "cohort_week": 6,
+      "n_labeled": 199,
+      "default_rate": 0.201
+    },
+    {
+      "cohort_week": 7,
+      "n_labeled": 205,
+      "default_rate": 0.1902
+    },
+    {
+      "cohort_week": 8,
+      "n_labeled": 222,
+      "default_rate": 0.2252
+    },
+    {
+      "cohort_week": 9,
+      "n_labeled": 174,
+      "default_rate": 0.1897
+    },
+    {
+      "cohort_week": 10,
+      "n_labeled": 206,
+      "default_rate": 0.2087
+    },
+    {
+      "cohort_week": 11,
+      "n_labeled": 177,
+      "default_rate": 0.1977
+    },
+    {
+      "cohort_week": 12,
+      "n_labeled": 167,
+      "default_rate": 0.2395
+    },
+    {
+      "cohort_week": 13,
+      "n_labeled": 157,
+      "default_rate": 0.1529
+    }
+  ],
+  "timestamp_ranges": {
+    "train": {
+      "min": "2024-01-01 00:00:00",
+      "max": "2025-06-29 00:00:00",
+      "cohort_coverage": 0.0
+    },
+    "validation": {
+      "min": "2025-06-30 00:00:00",
+      "max": "2025-09-28 00:00:00",
+      "cohort_coverage": 1.0
+    },
+    "test": {
+      "min": "2025-06-30 00:00:00",
+      "max": "2025-09-28 00:00:00",
+      "cohort_coverage": 1.0
+    }
+  },
+  "missingness_signal": [
+    {
+      "feature": "<<baseline>>",
+      "group": "all",
+      "n": 51722,
+      "default_rate": 0.1745
+    },
+    {
+      "feature": "has_linked_bank_feed",
+      "group": "True",
+      "n": 34751,
+      "default_rate": 0.1665
+    },
+    {
+      "feature": "has_linked_bank_feed",
+      "group": "False",
+      "n": 16971,
+      "default_rate": 0.1907
+    },
+    {
+      "feature": "days_since_last_external_decline",
+      "group": "null",
+      "n": 28334,
+      "default_rate": 0.1428
+    },
+    {
+      "feature": "days_since_last_external_decline",
+      "group": "present",
+      "n": 23388,
+      "default_rate": 0.2128
+    },
+    {
+      "feature": "days_since_last_inquiry_elsewhere",
+      "group": "null",
+      "n": 28164,
+      "default_rate": 0.1415
+    },
+    {
+      "feature": "days_since_last_inquiry_elsewhere",
+      "group": "present",
+      "n": 23558,
+      "default_rate": 0.2139
+    },
+    {
+      "feature": "prior_approved_amount",
+      "group": "present",
+      "n": 51722,
+      "default_rate": 0.1745
+    },
+    {
+      "feature": "observed_monthly_revenue_avg_3mo",
+      "group": "null",
+      "n": 16971,
+      "default_rate": 0.1907
+    },
+    {
+      "feature": "observed_monthly_revenue_avg_3mo",
+      "group": "present",
+      "n": 34751,
+      "default_rate": 0.1665
+    }
+  ],
+  "missingness_by_split_top": [
+    {
+      "feature": "days_since_last_external_decline",
+      "null_train": 0.5019,
+      "null_validation": 0.4968,
+      "null_test": 0.4904
+    },
+    {
+      "feature": "days_since_last_inquiry_elsewhere",
+      "null_train": 0.4992,
+      "null_validation": 0.4888,
+      "null_test": 0.4897
+    },
+    {
+      "feature": "prior_approved_amount",
+      "null_train": 0.3939,
+      "null_validation": 0.4317,
+      "null_test": 0.437
+    },
+    {
+      "feature": "observed_monthly_revenue_avg_3mo",
+      "null_train": 0.3568,
+      "null_validation": 0.3658,
+      "null_test": 0.3674
+    },
+    {
+      "feature": "payroll_regularity_score",
+      "null_train": 0.3568,
+      "null_validation": 0.3658,
+      "null_test": 0.3674
+    },
+    {
+      "feature": "observed_overdraft_count_3mo",
+      "null_train": 0.3568,
+      "null_validation": 0.3658,
+      "null_test": 0.3674
+    },
+    {
+      "feature": "observed_cash_balance_p10",
+      "null_train": 0.3568,
+      "null_validation": 0.3658,
+      "null_test": 0.3674
+    },
+    {
+      "feature": "observed_revenue_volatility",
+      "null_train": 0.3568,
+      "null_validation": 0.3658,
+      "null_test": 0.3674
+    },
+    {
+      "feature": "observed_revenue_trend_3mo",
+      "null_train": 0.3568,
+      "null_validation": 0.3658,
+      "null_test": 0.3674
+    },
+    {
+      "feature": "application_channel",
+      "null_train": 0.0,
+      "null_validation": 0.0,
+      "null_test": 0.0
+    },
+    {
+      "feature": "bookkeeping_recency_days",
+      "null_train": 0.0,
+      "null_validation": 0.0,
+      "null_test": 0.0
+    },
+    {
+      "feature": "multi_lender_inquiry_count_30d",
+      "null_train": 0.0,
+      "null_validation": 0.0,
+      "null_test": 0.0
+    },
+    {
+      "feature": "repeat_application_count",
+      "null_train": 0.0,
+      "null_validation": 0.0,
+      "null_test": 0.0
+    },
+    {
+      "feature": "requested_amount_to_observed_revenue",
+      "null_train": 0.0,
+      "null_validation": 0.0,
+      "null_test": 0.0
+    },
+    {
+      "feature": "prior_underwriter_score",
+      "null_train": 0.0,
+      "null_validation": 0.0,
+      "null_test": 0.0
+    }
+  ],
+  "revenue_discrepancy": {
+    "n_with_feed": 34751,
+    "ratio_median": 0.949,
+    "ratio_p10": 0.718,
+    "ratio_p90": 1.269,
+    "frac_overstate_1.5x": 0.024,
+    "default_rate_overstate": 0.3859,
+    "default_rate_not_overstate": 0.1611,
+    "tib_gap_median": 0.272,
+    "tib_stated_gt_vintage_frac": 0.329
+  },
+  "recompute_ratio_check": {
+    "provided_null_frac": 0.0,
+    "provided_null_when_no_feed_frac": 0.0,
+    "n_comparable": 54887,
+    "max_abs_diff_vs_naive_recompute": 1.1226,
+    "median_abs_diff": 0.137001
+  },
+  "entity_structure": {
+    "business_overlap_tr_va": 0,
+    "business_overlap_tr_te": 0,
+    "business_overlap_va_te": 0,
+    "train_n_businesses": 68364,
+    "train_multi_app_businesses": 14425,
+    "train_max_apps_per_business": 4,
+    "repeat_app_count_max": 3,
+    "prior_loans_count_max": 6,
+    "frac_first_time": 0.676
+  },
+  "leakage_audit_top": [
+    {
+      "feature": "invoice_payment_delinquency_rate",
+      "auc": 0.7506,
+      "raw_auc": 0.7506
+    },
+    {
+      "feature": "aggregate_credit_utilization",
+      "auc": 0.7353,
+      "raw_auc": 0.7353
+    },
+    {
+      "feature": "observed_cash_balance_p10",
+      "auc": 0.6789,
+      "raw_auc": 0.3211
+    },
+    {
+      "feature": "requested_amount_to_observed_revenue",
+      "auc": 0.6675,
+      "raw_auc": 0.6675
+    },
+    {
+      "feature": "requested_amount",
+      "auc": 0.6491,
+      "raw_auc": 0.6491
+    },
+    {
+      "feature": "prior_approved_amount",
+      "auc": 0.6402,
+      "raw_auc": 0.6402
+    },
+    {
+      "feature": "owner_personal_credit_band",
+      "auc": 0.6189,
+      "raw_auc": 0.3811
+    },
+    {
+      "feature": "payroll_regularity_score",
+      "auc": 0.6114,
+      "raw_auc": 0.3886
+    },
+    {
+      "feature": "observed_revenue_volatility",
+      "auc": 0.6082,
+      "raw_auc": 0.6082
+    },
+    {
+      "feature": "existing_debt_obligations",
+      "auc": 0.6066,
+      "raw_auc": 0.6066
+    },
+    {
+      "feature": "prior_underwriter_score",
+      "auc": 0.5868,
+      "raw_auc": 0.4132
+    },
+    {
+      "feature": "bookkeeping_recency_days",
+      "auc": 0.586,
+      "raw_auc": 0.586
+    },
+    {
+      "feature": "platform_active_months",
+      "auc": 0.5748,
+      "raw_auc": 0.4252
+    },
+    {
+      "feature": "vintage_years",
+      "auc": 0.5699,
+      "raw_auc": 0.4301
+    },
+    {
+      "feature": "observed_monthly_revenue_avg_3mo",
+      "auc": 0.5661,
+      "raw_auc": 0.4339
+    }
+  ],
+  "class_balance": {
+    "overall": 0.1745,
+    "sector": {
+      "0": {
+        "rate": 0.1943,
+        "n": 14876
+      },
+      "1": {
+        "rate": 0.1885,
+        "n": 12501
+      },
+      "2": {
+        "rate": 0.1849,
+        "n": 10261
+      },
+      "3": {
+        "rate": 0.1111,
+        "n": 8903
+      },
+      "4": {
+        "rate": 0.172,
+        "n": 5181
+      }
+    },
+    "geography_region": {
+      "0": {
+        "rate": 0.1706,
+        "n": 12734
+      },
+      "1": {
+        "rate": 0.1787,
+        "n": 13266
+      },
+      "2": {
+        "rate": 0.1752,
+        "n": 12915
+      },
+      "3": {
+        "rate": 0.1731,
+        "n": 12807
+      }
+    },
+    "owner_personal_credit_band": {
+      "0": {
+        "rate": 0.2874,
+        "n": 6917
+      },
+      "1": {
+        "rate": 0.2266,
+        "n": 8986
+      },
+      "2": {
+        "rate": 0.1837,
+        "n": 10464
+      },
+      "3": {
+        "rate": 0.1438,
+        "n": 11732
+      },
+      "4": {
+        "rate": 0.1021,
+        "n": 13623
+      }
+    },
+    "application_channel": {
+      "0": {
+        "rate": 0.1707,
+        "n": 25878
+      },
+      "1": {
+        "rate": 0.1737,
+        "n": 18369
+      },
+      "2": {
+        "rate": 0.1893,
+        "n": 7475
+      }
+    }
+  },
+  "boring_checks": {
+    "constant_cols": [],
+    "duplicate_rows_excl_id": 0,
+    "dtype_mismatches": [
+      {
+        "field": "default_flag",
+        "dict": "bool",
+        "actual": "float64"
+      }
+    ],
+    "outliers": {
+      "cash_balance_p10_negative_frac": 0.2858,
+      "requested_amount_min": 7590.5,
+      "requested_amount_max": 45902.5,
+      "requested_amount_out_of_5k_50k_frac": 0.0,
+      "existing_debt_p99": 27021.2,
+      "existing_debt_max": 69238.7
+    },
+    "categorical_cardinality": {
+      "sector": 5,
+      "geography_region": 4,
+      "employee_count_bucket": 4,
+      "intended_use_of_funds": 4,
+      "owner_personal_credit_band": 5,
+      "application_channel": 3,
+      "prior_decision": 2
+    },
+    "prior_decision_values": [
+      0,
+      1
+    ]
+  },
+  "integrity_checks": {
+    "label_consistency": {
+      "default_flag_xor_status": 0,
+      "default_flag_xor_dtd": 0,
+      "paid_xor_repayday": 0,
+      "recovery_on_nondefault": 0,
+      "dtd_out_of_range": 0
+    },
+    "logical_invariants": {
+      "prior_def_gt_count": 0,
+      "approved_amt_xor_decision": 0,
+      "approved_gt_requested": 0,
+      "observed_xor_feed": 0
+    },
+    "domain_violations": {
+      "aggregate_credit_utilization": 0,
+      "invoice_payment_delinquency_rate": 0,
+      "payroll_regularity_score": 0,
+      "stated_annual_revenue": 0,
+      "observed_monthly_revenue_avg_3mo": 0,
+      "vintage_years": 0,
+      "stated_time_in_business": 0,
+      "existing_debt_obligations": 0,
+      "requested_amount": 0
+    },
+    "unseen_category_codes": {
+      "sector": {
+        "val_unseen": [],
+        "test_unseen": []
+      },
+      "geography_region": {
+        "val_unseen": [],
+        "test_unseen": []
+      },
+      "employee_count_bucket": {
+        "val_unseen": [],
+        "test_unseen": []
+      },
+      "intended_use_of_funds": {
+        "val_unseen": [],
+        "test_unseen": []
+      },
+      "owner_personal_credit_band": {
+        "val_unseen": [],
+        "test_unseen": []
+      },
+      "application_channel": {
+        "val_unseen": [],
+        "test_unseen": []
+      }
+    },
+    "duplicates": {
+      "exact_rows": 0,
+      "biz_amount_ts": 0
+    }
+  },
+  "intervention_support": {
+    "n_queries": 900,
+    "n_applicants": 300,
+    "all_applicants_in_test": 1,
+    "queried_not_dict_intervenable": [
+      "account_age_days",
+      "bookkeeping_recency_days",
+      "days_since_last_external_decline",
+      "days_since_last_inquiry_elsewhere",
+      "employee_count_bucket",
+      "geography_region",
+      "has_linked_bank_feed",
+      "intended_use_of_funds",
+      "platform_active_months",
+      "prior_loans_amount_total",
+      "prior_loans_count",
+      "prior_loans_default_count",
+      "sector",
+      "vintage_years"
+    ],
+    "feature_query_counts": {
+      "stated_time_in_business": 68,
+      "observed_revenue_trend_3mo": 53,
+      "existing_debt_obligations": 52,
+      "observed_revenue_volatility": 52,
+      "observed_cash_balance_p10": 51,
+      "invoice_payment_delinquency_rate": 50,
+      "recent_inquiries_count_6mo": 49,
+      "aggregate_credit_utilization": 47,
+      "observed_overdraft_count_3mo": 47,
+      "owner_personal_credit_band": 45,
+      "application_channel": 45,
+      "observed_monthly_revenue_avg_3mo": 42,
+      "requested_amount": 40,
+      "stated_annual_revenue": 36,
+      "multi_lender_inquiry_count_30d": 34,
+      "account_age_days": 20,
+      "platform_active_months": 19,
+      "days_since_last_inquiry_elsewhere": 16,
+      "payroll_regularity_score": 15,
+      "employee_count_bucket": 14,
+      "prior_loans_default_count": 13,
+      "intended_use_of_funds": 12,
+      "vintage_years": 12,
+      "sector": 12,
+      "geography_region": 11,
+      "bookkeeping_recency_days": 11,
+      "days_since_last_external_decline": 9,
+      "prior_loans_amount_total": 9,
+      "has_linked_bank_feed": 9,
+      "prior_loans_count": 7
+    },
+    "support": {
+      "stated_time_in_business": {
+        "n_queries": 68,
+        "frac_in_1_99_support": 1.0
+      },
+      "observed_revenue_trend_3mo": {
+        "n_queries": 53,
+        "frac_in_1_99_support": 0.717
+      },
+      "existing_debt_obligations": {
+        "n_queries": 52,
+        "frac_in_1_99_support": 1.0
+      },
+      "observed_revenue_volatility": {
+        "n_queries": 52,
+        "frac_in_1_99_support": 1.0
+      },
+      "observed_cash_balance_p10": {
+        "n_queries": 51,
+        "frac_in_1_99_support": 1.0
+      },
+      "invoice_payment_delinquency_rate": {
+        "n_queries": 50,
+        "frac_in_1_99_support": 1.0
+      },
+      "recent_inquiries_count_6mo": {
+        "n_queries": 49,
+        "frac_in_1_99_support": 0.449
+      },
+      "aggregate_credit_utilization": {
+        "n_queries": 47,
+        "frac_in_1_99_support": 1.0
+      },
+      "observed_overdraft_count_3mo": {
+        "n_queries": 47,
+        "frac_in_1_99_support": 0.638
+      },
+      "owner_personal_credit_band": {
+        "n_queries": 45,
+        "frac_in_1_99_support": 1.0
+      },
+      "application_channel": {
+        "n_queries": 45,
+        "frac_in_1_99_support": 1.0
+      },
+      "observed_monthly_revenue_avg_3mo": {
+        "n_queries": 42,
+        "frac_in_1_99_support": 1.0
+      },
+      "requested_amount": {
+        "n_queries": 40,
+        "frac_in_1_99_support": 1.0
+      },
+      "stated_annual_revenue": {
+        "n_queries": 36,
+        "frac_in_1_99_support": 1.0
+      },
+      "multi_lender_inquiry_count_30d": {
+        "n_queries": 34,
+        "frac_in_1_99_support": 0.647
+      },
+      "account_age_days": {
+        "n_queries": 20,
+        "frac_in_1_99_support": 1.0
+      },
+      "platform_active_months": {
+        "n_queries": 19,
+        "frac_in_1_99_support": 0.579
+      },
+      "days_since_last_inquiry_elsewhere": {
+        "n_queries": 16,
+        "frac_in_1_99_support": 1.0
+      },
+      "payroll_regularity_score": {
+        "n_queries": 15,
+        "frac_in_1_99_support": 1.0
+      },
+      "employee_count_bucket": {
+        "n_queries": 14,
+        "frac_in_1_99_support": 1.0
+      },
+      "prior_loans_default_count": {
+        "n_queries": 13,
+        "frac_in_1_99_support": 0.615
+      },
+      "intended_use_of_funds": {
+        "n_queries": 12,
+        "frac_in_1_99_support": 1.0
+      },
+      "vintage_years": {
+        "n_queries": 12,
+        "frac_in_1_99_support": 1.0
+      },
+      "sector": {
+        "n_queries": 12,
+        "frac_in_1_99_support": 1.0
+      },
+      "geography_region": {
+        "n_queries": 11,
+        "frac_in_1_99_support": 1.0
+      },
+      "bookkeeping_recency_days": {
+        "n_queries": 11,
+        "frac_in_1_99_support": 1.0
+      },
+      "days_since_last_external_decline": {
+        "n_queries": 9,
+        "frac_in_1_99_support": 1.0
+      },
+      "prior_loans_amount_total": {
+        "n_queries": 9,
+        "frac_in_1_99_support": 1.0
+      },
+      "has_linked_bank_feed": {
+        "n_queries": 9,
+        "frac_in_1_99_support": 1.0
+      },
+      "prior_loans_count": {
+        "n_queries": 7,
+        "frac_in_1_99_support": 0.286
+      }
+    }
+  },
+  "figures": [
+    "fig01_prior_score_threshold.png",
+    "fig02_default_timing_hazard.png",
+    "fig03_cumulative_trajectory.png",
+    "fig04_cohort_default_rate.png",
+    "fig05_missingness_heatmap.png",
+    "fig06_revenue_discrepancy.png"
+  ]
+}

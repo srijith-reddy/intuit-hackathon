@@ -1,0 +1,32 @@
+project:
+  type: website
+  output-dir: docs
+  render:
+    - notebooks/01_eda.ipynb
+    - reports/*.md
+
+website:
+  title: "SMB Underwriting Challenge — Intuit TechWeek NYC 2026"
+  navbar:
+    left:
+      - text: "EDA"
+        href: notebooks/01_eda.ipynb
+      - text: "Feature Catalog"
+        href: reports/feature_catalog.md
+      - text: "Design Decisions"
+        href: reports/design_decisions.md
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    fig-width: 8
+    fig-height: 5
+
+execute:
+  freeze: auto
+  warning: false
