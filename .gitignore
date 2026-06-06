@@ -25,5 +25,3 @@ artifacts/
 .vscode/
 .idea/
 
-# large provided data (reproducible from zip; not version-controlled here)
-dataset/dataset-compressed/
