@@ -49,18 +49,24 @@ def fit_pd_interval_scale(p_cal, std, y, z=1.6448536269514722, target=0.90,
 # --------------------------------------------------------------------------- #
 def per_cohort_pd_scale(va_cohort: np.ndarray, va_pred: np.ndarray, va_y: np.ndarray,
                         K: float = 75.0, n_cohorts: int = 13,
-                        gap_threshold: float = 0.0) -> dict:
+                        gap_threshold: float = 0.0,
+                        scale_clip: tuple[float, float] = (0.9, 1.1)) -> dict:
     """Per-cohort multiplicative scaling factors for A's PD, shrunk toward the val
     realized default rate. Empirical-Bayes blend:
       shrunk_rate_w = (n_w·val_rate_w + K·pred_rate_w) / (n_w + K)
-      scale_w       = shrunk_rate_w / pred_rate_w
+      scale_w       = clip(shrunk_rate_w / pred_rate_w, *scale_clip)
 
     `gap_threshold` keeps the adjustment surgical: cohorts where the val/model gap
     is below the threshold get scale=1.0, preserving the pooled decile calibration.
     Only cohorts with a clear, likely-real bias get rescaled.
 
+    `scale_clip` bounds each scale to a moderate move (default ±10%). Per-cohort
+    n ≈ 150 means the val rate has ~2pp sampling SE; a ±10% PD swing is the
+    largest move that can be defended against sampling noise on the anchor.
+
     Caller applies `p_adj = p * scale_w[cohort_w(loan)]`.
     """
+    lo, hi = scale_clip
     out = {}
     for w in range(1, n_cohorts + 1):
         m = va_cohort == w
@@ -72,7 +78,7 @@ def per_cohort_pd_scale(va_cohort: np.ndarray, va_pred: np.ndarray, va_y: np.nda
         if pred_w <= 1e-6 or abs(obs_w - pred_w) < gap_threshold:
             out[w] = 1.0; continue
         shrunk = (n_w * obs_w + K * pred_w) / (n_w + K)
-        out[w] = float(shrunk / pred_w)
+        out[w] = float(np.clip(shrunk / pred_w, lo, hi))
     return out
 
 

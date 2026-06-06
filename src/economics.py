@@ -32,16 +32,22 @@ def revenue_if_full(amount: np.ndarray | pd.Series) -> np.ndarray:
 
 
 def npv_if_default(amount, t_star, recovery=0.0) -> np.ndarray:
-    """EXACT NPV of a defaulted loan: F + D(t*-1) + rec - R (brief p.8).
+    """NPV of a defaulted loan: F + D·min(t*-1, T-1) + rec − R.
 
-    t_star is the default day in [1,90]; draws collected up to t*-1 are credited
-    (so late defaults are far less costly — even positive for very late t*).
+    Brief formula is F + D(t*-1) + rec − R, but daily ACH draws can only be
+    collected during the 60-day TERM — after day 60 the borrower has no scheduled
+    payments and the loan resolves in the day-90 open-balance window. Capping the
+    draw count at T-1 = 59 is the mechanical floor: it removes the spurious
+    positive NPV the literal formula assigns to day-90 sweep defaults (mean ~+$16k
+    becomes ~+$2k on observed val day-90 loans). Applies in both the decision rule
+    (`expected_npv`) and any realized-P&L attribution that uses this function.
     """
     amount = np.asarray(amount, float)
     t_star = np.asarray(t_star, float)
     recovery = np.asarray(recovery, float)
     D = amount * DAILY_DRAW_FRAC
-    return FEE * amount + D * (t_star - 1) + recovery - amount
+    draws_days = np.minimum(t_star - 1, PRODUCT.term_days - 1)
+    return FEE * amount + D * draws_days + recovery - amount
 
 
 def expected_npv(amount, pd_hat, default_day_dist=None, mean_default_day=None,

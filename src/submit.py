@@ -139,7 +139,10 @@ def build():
     # that drive B's per-loan CDR shape and A's E[NPV] per-loan timing.
     def_mask = lab & (tr["default_flag"] == 1)
     Xd = F.model_features(Xtr_all)[def_mask.values]
-    yd = (pd.to_numeric(tr.loc[def_mask, "days_to_default"], errors="coerce") >= 89).astype(int).to_numpy()
+    # Day-90 sweep label: the "open-balance at day 90" failure mode. On the data,
+    # day 89 has zero defaults so >= 90 is a strict equivalent of `== 90` here;
+    # the inequality is robust if any future cleaner cut falls one day off.
+    yd = (pd.to_numeric(tr.loc[def_mask, "days_to_default"], errors="coerce") >= 90).astype(int).to_numpy()
     import lightgbm as lgb
     from sklearn.model_selection import GroupKFold
     d90_boosters = []
@@ -238,8 +241,7 @@ def build():
     scale_arr = np.array([pcoh_scale.get(int(w), 1.0) if pd.notna(w) else 1.0 for w in sc_cw])
     p_pre = p.copy()
     p = np.clip(p * scale_arr, 0, 1)
-    half = model.alpha * model.z90 * ssc
-    lo = np.clip(p - half, 0, 1); hi = np.clip(p + half, 0, 1)
+    lo, hi = model.recenter_intervals(p, ssc)
     amt = scored["requested_amount"].to_numpy(float)
     # Per-loan timing for E[NPV]: d90 head + band-conditional early-mean day.
     d90_sc = _predict_d90_frac(F.model_features(Xsc))
