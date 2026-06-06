@@ -46,3 +46,31 @@ ship path) for no honest improvement. Shipped fold-σ wins the tie. Did not iter
 *Side finding:* shipped per-cohort interval coverage is ~0.77 (3 of 13 cohort rates fall
 outside the mean interval) — a known consequence of calibrating A intervals at
 per-applicant/decile granularity; not fixed by cross-family-σ.
+
+---
+
+## Part 2 — Logistic parity (S_write, 15%)  — **SHIPPED** (writeup/reports only)
+No pipeline change (point preds, decisions, intervals, B, C all unchanged). Added
+`reports/model_family_comparison.md` and a §3 "Model-class check" paragraph.
+- logit best single model: OOF AUC 0.7754 / Brier 0.1169; val AUC **0.759 vs LGB 0.751**
+  (more drift-robust); 8/10 coefficient signs agree, 2 collinearity sign-flips
+  (`buffer_to_payment`, `debt_to_revenue`) — motivates SHAP+registry over raw coefficients.
+- Writeup back to 4pp (shrank fig1 0.82→0.70, fig3 0.6→0.5; trimmed §2/§4/§5 prose). PASS.
+
+---
+
+## Part 3 — Explicitly REJECTED changes (on record, with evidence)
+- **Optuna / hyperparameter search — REJECTED.** Model-family probe: all learners within a
+  0.006 AUC / 0.001 Brier band (lgb 0.7697, xgb 0.7708, logit 0.7754). Tuning chases noise
+  inside that band and risks the val set that certifies our calibration. No score path.
+- **XGB / stacking for accuracy — REJECTED.** Blend (OOF AUC 0.7746) < best single (logit
+  0.7754); ensembling does not beat the best base. Not accuracy-bound (audit-confirmed).
+- **Cross-family σ for intervals — REJECTED** (Part 1): hypothesis falsified on val.
+- **HMM / regime meta-learning — REJECTED.** E3 (band-conditional timing) + E4 (per-cohort
+  EB level) already are the context-conditional adjustment at the right scale for 13 cohorts
+  × ~150 loans; a fuller regime stack (project4 §6.3) overfits here.
+- **Model swap to logit — REJECTED.** Despite the ≤0.006 AUC edge, swapping the point model
+  cascades through every deliverable — E1 level calibration, the A intervals, the E3 hazard
+  interaction, and all Deliverable-C baselines/registry re-predictions run through the
+  shipped LGB — and re-spends val honesty re-validating the chain, for a noise-band gain.
+  The logit's value is evidentiary (Part 2), not as the shipped predictor.
