@@ -8,6 +8,10 @@
 \graphicspath{{./}}
 
 \setlength{\parskip}{2pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}   % trim whitespace above/below top-bottom floats
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}      % and around here-placed floats
+\setlength{\dbltextfloatsep}{6pt plus 2pt minus 2pt}
 \emergencystretch=1.5em  % absorb the few long \texttt{} terms cleanly
 \newcommand{\code}[1]{\texttt{\small #1}}
 \newcommand{\E}{\mathbb{E}}
@@ -29,23 +33,12 @@ We are re-underwriting a historical SMB loan book to maximize realized portfolio
 net present value (NPV), not to maximize classification accuracy. Several standard
 modelling assumptions fail, and each failure changed our approach.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.58\textwidth]{fig01_prior_score_threshold.png}
-\caption{The prior lender's approval rule is a sharp threshold at
-$\code{prior\_underwriter\_score}=0.273$. The approved and declined score
-distributions do not overlap (left), and the approval rate is a step function of the
-score (right); labels are observed only to the right of the cut. This is the source of
-the selection bias and the reason inverse-propensity reweighting is infeasible.}
-\label{fig:gate}
-\end{figure}
-
 \textbf{Labels are missing-not-at-random behind a sharp gate.} Repayment outcomes
 exist only for loans the prior lender approved, and approval is, to numerical
 precision, $\code{prior\_underwriter\_score} \geq 0.273$: a propensity model
 separates approved from declined with AUC $1.00$ and \emph{zero} score overlap.
 The training label is therefore selected on a deterministic function of an observed
-covariate (Figure~\ref{fig:gate})---textbook sample-selection bias. Crucially, inverse-propensity
+covariate---textbook sample-selection bias. Crucially, inverse-propensity
 reweighting is \emph{infeasible}: a propensity model fit on the ordinary covariates
 (no selection features) still reaches AUC $1.00$, so approved and declined
 populations do not overlap in feature space and positivity is violated. Only
@@ -121,7 +114,7 @@ and test span the identical 13 weeks, so this transfers.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.50\textwidth]{shap_summary.png}
+\includegraphics[width=0.45\textwidth]{shap_summary.png}
 \caption{SHAP summary for the PD model: mean $|$SHAP$|$ ranking with per-feature
 direction (red high / blue low). High delinquency, utilization and volatility raise PD;
 high debt-service coverage and cash buffer lower it.}
@@ -148,7 +141,7 @@ full strength. \emph{Confounded proxies}---bureau and bank-feed symptoms of late
 each by an estimated causal fraction $\hat\lambda = \beta_{\text{adj}}/\beta_{\text{naive}}$
 (sibling-adjusted logistic; per-family $\hat\lambda \approx 0.52,\,0.51,\,0.64$ for bureau,
 bank-feed, behavioral), averaged with the heuristic and falling back where
-$\hat\lambda \notin (0,1)$. Conditioning sets are chosen \emph{empirically}: an
+$\hat\lambda \notin (0,1)$. Conditioning sets are chosen \emph{empirically} (Figure~\ref{fig:proxy}): an
 FDR-controlled sparse partial-correlation graph of the proxy block ($q{=}0.05$,
 $n{=}55$k) confirms one dominant latent-health factor (32\% of variance, $2.3\times$ the
 second) but flags ``siblings'' that are in fact \emph{descendants}---invoice delinquency
@@ -166,6 +159,18 @@ answer, not naive re-prediction. \emph{Immutable or proxy-by-fiat} features---\c
 \code{geography\_region}, \code{vintage\_years}, \code{has\_linked\_bank\_feed}---are forced
 into the query set though they are not manipulable levers; we answer via model perturbation
 but shrink the effect and widen the interval, and flag them as proxy effects.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.90\textwidth]{proxy_structure.png}
+\vspace{-0.5em}
+\caption{Left: FDR-surviving partial correlations of the proxy block ($q{=}0.05$,
+$n{=}55$k); edge width $=|\text{partial corr.}|$, red $=$ negative. Right: eigenvalue
+spectrum---one dominant latent-health factor (32\% of variance). The
+cash--invoice-delinquency edge ($-0.78$) identifies a descendant, not a sibling,
+motivating its exclusion from the adjustment set.}
+\label{fig:proxy}
+\end{figure}
 
 \textbf{Regulator defense.} Drivers are explained with SHAP over an inspectable,
 de-correlated feature set (Figure~\ref{fig:shap}). The leading drivers---invoice-payment
