@@ -1,0 +1,48 @@
+# Polish Log — evidence-backed, gated, revertable changes
+
+Baseline = shipped submission on `main` (validator PASS, tests 10/10, E1–E4 banked).
+Branch `polish/*`. Each change: gate defined first, measured before/after; shipped
+state wins ties. Any new val fitting is cross-fit (we already spent val on E1/E4).
+
+Probe that motivates this pass:
+```
+OOF (GroupKFold)   AUC      Brier
+  lgb (shipped)   0.7697   0.1181
+  xgb             0.7708   0.1176
+  logit           0.7754   0.1169   <- best single
+  blend           0.7746   0.1169
+corr(cross-family std, |error|) = +0.54; std 3.2x wider in top vs bottom error decile
+```
+
+---
+
+## Part 1 — Cross-family σ for A intervals (S_cal, 20%)
+Gate (all on cross-fit val): honest coverage ∈ [0.88,0.92]; mean width ≤ shipped 0.064;
+per-cohort coverage ≥ 0.85; per-decile coverage ≥ 0.85; width ADAPTIVE across error
+deciles; report α.
+
+**RESULT: REJECTED** (no pipeline change). Measured gate-first via
+`audit/scripts/p1_measure.py` (read-only), honest OOF-point + cross-fit-α protocol.
+
+| metric (honest, val) | SHIPPED fold-σ | NEW cross-family-σ |
+|---|---|---|
+| cross-fit α | 1.10 | 1.20 |
+| decile coverage (cross-fit α, full val) | 0.90 (9/10) | 0.90 (9/10) |
+| mean width | **0.0531** | 0.0549 (wider) |
+| per-cohort coverage | 0.77 (10/13) | 0.85 (11/13) |
+| width adaptivity (hi/lo err decile) | **2.58×** | 2.21× |
+| corr(σ, \|error\|) on val | **+0.62** | +0.50 |
+
+**Why rejected:** the motivating signal (probe's +0.54 family-σ↔error on *train* OOF)
+**did not transfer to val** — fold-σ actually correlates with realized error *more*
+(0.62 vs 0.50). Cross-family-σ is slightly **wider** and **less adaptive**; its only
+edge is per-cohort coverage, a **single cohort** (10/13→11/13) within sampling noise at
+~150 loans/cohort. The change adds real complexity (training xgb+logit families in the
+ship path) for no honest improvement. Shipped fold-σ wins the tie. Did not iterate.
+
+*Note:* the in-sample-point variant of the gate floored α and collapsed width to ~0.014
+(the documented E1/E2 failure mode); the honest protocol uses OOF-calibrated val points.
+
+*Side finding:* shipped per-cohort interval coverage is ~0.77 (3 of 13 cohort rates fall
+outside the mean interval) — a known consequence of calibrating A intervals at
+per-applicant/decile granularity; not fixed by cross-family-σ.
