@@ -74,3 +74,23 @@ No pipeline change (point preds, decisions, intervals, B, C all unchanged). Adde
   interaction, and all Deliverable-C baselines/registry re-predictions run through the
   shipped LGB — and re-spends val honesty re-validating the chain, for a noise-band gain.
   The logit's value is evidentiary (Part 2), not as the shipped predictor.
+
+---
+
+## Part 4 — Deliverable C λ̂ for confounded proxies (S_C, 10%)  — **SHIPPED**
+Measured via `audit/scripts/p4_lambda.py` → `reports/lambda_hat.csv`.
+- **Eigenvalue check:** proxy block eigenvalues [3.51, 1.65, 1.11, …], ev1/ev2 = 2.13 (<2.5)
+  → several comparable factors → use **sibling-proxy ratio** λ̂ = β_adj/β_naive (plain logistic).
+- **λ̂ (8/12 valid in (0,1)):** utilization 0.52, invoice-delinq 0.64, obs_monthly_rev 0.59,
+  trend 0.67, volatility 0.73, cash_balance 0.03, overdraft 0.42, payroll 0.13. Per-family
+  mean: bureau 0.52, bank-feed 0.43, behavioral 0.64. **4 fall back** (sign-flip under
+  sibling adjustment → mediator/collinearity): recent_inquiries, existing_debt, credit_band,
+  multi_lender_inquiry → keep shipped heuristic.
+- **Change:** confounded proxies (currently full-strength = the penalized "naive
+  re-prediction") shrunk by λ̂; final p_cf = mean(heuristic, λ̂). requested_amount stays full
+  mechanical; self-reports stay ≈0; immutables/fallbacks unchanged.
+- **Gate (sanity, no labels) — ALL PASS:** p_cf∈[0,1] ✓; l≤p≤u ✓; λ̂∈(0,1) ✓;
+  do(observed)≈base max|Δ|=0.000<0.005 ✓; self-report still 0 ✓; do(requested_amount)
+  monotone corr 0.64 ✓. Confounded-proxy effect now 0.033 mean |Δ| from baseline (was naive
+  full strength); mean |Δ vs heuristic| = 0.0036. Tests 10/10, B monotone, validator PASS.
+- Writeup §3 updated (heuristic→estimated λ̂ + per-family table) and §5 hedge; PDF 4pp.

@@ -140,10 +140,14 @@ everything else is held at its observed value; the provided
 stale-descendant bug. This makes our $\mathrm{do}(\cdot)$ a genuine structural
 perturbation rather than an unconstrained input edit.
 
-\textbf{We classify the intervenable features by causal status.} \emph{Manipulable
-causes}---\code{requested\_amount}, \code{aggregate\_credit\_utilization},
-\code{existing\_debt\_obligations}, \code{invoice\_payment\_delinquency\_rate}---are
-perturbed and propagated; the model sensitivity is a meaningful interventional effect.
+\textbf{We classify the intervenable features by causal status.} \emph{Mechanical
+causes} (\code{requested\_amount}) are perturbed and propagated through the registry at
+full strength. \emph{Confounded proxies}---bureau and bank-feed symptoms of latent health
+(utilization, delinquency, revenue and cash signals)---are not perturbed naively: we shrink
+each by an estimated causal fraction $\hat\lambda = \beta_{\text{adj}}/\beta_{\text{naive}}$
+(sibling-adjusted logistic; per-family $\hat\lambda \approx 0.52,\,0.43,\,0.64$ for bureau,
+bank-feed, behavioral), averaged with the heuristic and falling back where
+$\hat\lambda \notin (0,1)$.
 \emph{Self-reports}---\code{stated\_annual\_revenue}, \code{stated\_time\_in\_business}---are
 returned at their observational PD, because editing a number on the application does not
 change the borrower's type: when the claim does not cause default,
@@ -215,9 +219,9 @@ interval coverage is out-of-sample (cross-fit / conformal).}
 
 \section{Limitations \& what we'd do differently}
 
-\textbf{Counterfactuals on non-causal channels are heuristic.} Self-report and immutable
-interventions use shrink/perturbation rather than a learned structural causal model, and C
-effects are unverifiable since the queried applicants have no labels.
+\textbf{Self-report and immutable counterfactuals remain heuristic} (confounded proxies use
+the estimated $\hat\lambda$ above), and all C effects are unverifiable since the queried
+applicants have no labels.
 
 \textbf{Calibration rests on an approval-selected validation set.} Approval is recoverable
 with AUC $\approx 1.0$, so approved and declined populations do not overlap: inverse-propensity
