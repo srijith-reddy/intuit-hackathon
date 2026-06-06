@@ -3,10 +3,10 @@ bureau,aggregate_credit_utilization,0.914,0.476,0.521,use
 bureau,recent_inquiries_count_6mo,0.167,-0.003,-0.02,FALLBACK
 bureau,existing_debt_obligations,0.335,-0.02,-0.06,FALLBACK
 bureau,owner_personal_credit_band,-0.423,0.095,-0.223,FALLBACK
-bank_feed,observed_monthly_revenue_avg_3mo,-0.28,-0.193,0.69,use
+bank_feed,observed_monthly_revenue_avg_3mo,-0.28,-0.165,0.588,use
 bank_feed,observed_revenue_trend_3mo,-0.213,-0.142,0.666,use
 bank_feed,observed_revenue_volatility,0.364,0.265,0.728,use
-bank_feed,observed_cash_balance_p10,-0.755,-0.33,0.437,use
+bank_feed,observed_cash_balance_p10,-0.755,-0.024,0.032,use
 bank_feed,observed_overdraft_count_3mo,0.278,0.116,0.418,use
 bank_feed,payroll_regularity_score,-0.435,-0.058,0.134,use
 behavioral,invoice_payment_delinquency_rate,0.877,0.56,0.638,use

@@ -31,7 +31,7 @@ modelling assumptions fail, and each failure changed our approach.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.70\textwidth]{fig01_prior_score_threshold.png}
+\includegraphics[width=0.58\textwidth]{fig01_prior_score_threshold.png}
 \caption{The prior lender's approval rule is a sharp threshold at
 $\code{prior\_underwriter\_score}=0.273$. The approved and declined score
 distributions do not overlap (left), and the approval rate is a step function of the
@@ -92,7 +92,7 @@ day-90 mass---so $S_b(t)$ feeds both B and the per-loan $\E[t^*]$ used in A.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.5\textwidth]{fig03_cumulative_trajectory.png}
+\includegraphics[width=0.44\textwidth]{fig03_cumulative_trajectory.png}
 \caption{Pooled cumulative default rate by loan-age week: a concave rise through
 week~9, a flat stretch (weeks 9--12), and the day-90 open-balance cliff at week~13.
 Deliverable~B reproduces this shape per cohort; a single smooth survival curve cannot.}
@@ -113,14 +113,15 @@ returns $1.74\times$ the prior underwriter's P\&L.
 $\mathrm{CDR}_{w,a} = \mathrm{mean}_{i \in A_w}\, \PD_i \, S_{b(i)}(a)$ over our approved
 cohort $A_w$, monotone by construction. Because the PD model has no cohort signal
 (training predates the window), we shrink each cohort's \emph{level} toward the realized
-validation rate for the same calendar week (empirical-Bayes, pseudo-count 75); validation
+validation rate for the same calendar week (hierarchical-Bayes random effects;
+pseudo-count 75 = prior precision); validation
 and test span the identical 13 weeks, so this transfers.
 
 \section{Causal reasoning \& counterfactual methodology}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.6\textwidth]{shap_summary.png}
+\includegraphics[width=0.50\textwidth]{shap_summary.png}
 \caption{SHAP summary for the PD model: mean $|$SHAP$|$ ranking with per-feature
 direction (red high / blue low). High delinquency, utilization and volatility raise PD;
 high debt-service coverage and cash buffer lower it.}
@@ -145,9 +146,17 @@ causes} (\code{requested\_amount}) are perturbed and propagated through the regi
 full strength. \emph{Confounded proxies}---bureau and bank-feed symptoms of latent health
 (utilization, delinquency, revenue and cash signals)---are not perturbed naively: we shrink
 each by an estimated causal fraction $\hat\lambda = \beta_{\text{adj}}/\beta_{\text{naive}}$
-(sibling-adjusted logistic; per-family $\hat\lambda \approx 0.52,\,0.43,\,0.64$ for bureau,
+(sibling-adjusted logistic; per-family $\hat\lambda \approx 0.52,\,0.51,\,0.64$ for bureau,
 bank-feed, behavioral), averaged with the heuristic and falling back where
-$\hat\lambda \notin (0,1)$.
+$\hat\lambda \notin (0,1)$. Conditioning sets are chosen \emph{empirically}: an
+FDR-controlled sparse partial-correlation graph of the proxy block ($q{=}0.05$,
+$n{=}55$k) confirms one dominant latent-health factor (32\% of variance, $2.3\times$ the
+second) but flags ``siblings'' that are in fact \emph{descendants}---invoice delinquency
+and overdrafts are consequences of low cash (partial corr.\ $-0.78$), payroll regularity
+of revenue ($+0.50$). Conditioning on a descendant blocks the true causal path, so we
+exclude them from those features' adjustment sets, correcting
+$\hat\lambda_{\text{cash}}$ from an implausible $0.03$ (cash buffers mechanically fund
+the daily draw) to $0.44$.
 \emph{Self-reports}---\code{stated\_annual\_revenue}, \code{stated\_time\_in\_business}---are
 returned at their observational PD, because editing a number on the application does not
 change the borrower's type: when the claim does not cause default,
@@ -183,7 +192,9 @@ and calibration---a scored component---favours the simpler, well-understood stac
 \section{Calibration \& uncertainty quantification}
 
 \textbf{Point PD.} Isotonic calibration is \emph{refit on in-window validation} to correct
-the train-to-window drift (training base rate $17.5\%$ versus window $20.6\%$); the caveat
+the train-to-window drift (training base rate $17.5\%$ versus window $20.6\%$; the
+$a_0{\to}0$ power-prior limit---in-window likelihood sets the level, history discounted);
+the caveat
 remains that calibration is valid on the approved manifold and extrapolated on declines.
 
 \textbf{Intervals (A, C).} Additive on the calibrated point, $p \pm \alpha z \sigma$, where
@@ -229,9 +240,9 @@ reject inference is infeasible, only RD-style local extrapolation is available (
 PD on declines---part of what A is scored on---cannot be validated.
 
 \textbf{The timing and cohort corrections lean on the validation window.} They transfer
-because validation and test share the identical 13 weeks, but small per-cohort samples
-($n \approx 150$) add variance that more in-window data would reduce. Finally, A is marginally
-aggressive (a 20\% upward PD shift still raises realized P\&L), so a slightly more conservative
-level would close the last of the oracle gap.
+because validation and test share the same 13 weeks, but small per-cohort samples
+($n \approx 150$) add variance. Finally, A is marginally aggressive (a 20\% upward PD
+shift still raises realized P\&L); a slightly more conservative level would close the
+remaining oracle gap.
 
 \end{document}
