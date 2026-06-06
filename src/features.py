@@ -299,6 +299,8 @@ def _prior_score(w, art):
     return pd.to_numeric(w["prior_underwriter_score"], errors="coerce")
 
 
+
+
 # Monetary log transforms (raw passthrough, log1p) — used by linear baseline.
 LOG_COLS = ["requested_amount", "stated_annual_revenue", "observed_monthly_revenue_avg_3mo",
             "existing_debt_obligations", "observed_cash_balance_p10", "prior_loans_amount_total"]
