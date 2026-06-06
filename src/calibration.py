@@ -45,6 +45,89 @@ def fit_pd_interval_scale(p_cal, std, y, z=1.6448536269514722, target=0.90,
 
 
 # --------------------------------------------------------------------------- #
+# Per-cohort PD level shrinkage for A (Iter1B)
+# --------------------------------------------------------------------------- #
+def per_cohort_pd_scale(va_cohort: np.ndarray, va_pred: np.ndarray, va_y: np.ndarray,
+                        K: float = 75.0, n_cohorts: int = 13,
+                        gap_threshold: float = 0.0) -> dict:
+    """Per-cohort multiplicative scaling factors for A's PD, shrunk toward val rate.
+
+    For each cohort w with n_w labeled approved val loans:
+      shrunk_rate_w = (n_w * val_rate_w + K * pred_rate_w) / (n_w + K)
+      scale_w = shrunk_rate_w / pred_rate_w
+    When |val_rate - pred_rate| < gap_threshold, scale_w := 1.0 (skip small gaps so
+    we don't disturb decile calibration where the per-cohort signal is noise).
+    Returns {w: scale_w}. Caller applies p_adj = p * scale_w[cohort_w(loan)].
+    """
+    out = {}
+    for w in range(1, n_cohorts + 1):
+        m = va_cohort == w
+        n_w = int(m.sum())
+        if n_w == 0:
+            out[w] = 1.0; continue
+        pred_w = float(va_pred[m].mean())
+        obs_w = float(va_y[m].mean())
+        if pred_w <= 1e-6 or abs(obs_w - pred_w) < gap_threshold:
+            out[w] = 1.0; continue
+        shrunk = (n_w * obs_w + K * pred_w) / (n_w + K)
+        out[w] = float(shrunk / pred_w)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Deliverable A — per-decile binned conformal half-widths (Iter1 replacement)
+# --------------------------------------------------------------------------- #
+def fit_pd_interval_binned(p_cal, y, n_bins=10, target=0.90,
+                           z=1.6448536269514722) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Per-decile conformal half-widths at the binned-rate scale.
+
+    Half-width for decile k = |bias_k| + z·SE_binomial_k, where
+      bias_k = bin_pred − bin_obs   (signed calibration error at the bin)
+      SE_k   = sqrt(p_obs(1−p_obs)/n_k)
+    Inputs are CROSS-FIT calibrated PD on val. Returns:
+      edges      — decile edges (length n_bins+1, with 0/1 sentinels)
+      half_widths— per-decile half-width (length n_bins)
+      report     — diagnostic dict.
+    """
+    p_cal = np.asarray(p_cal, float); y = np.asarray(y, int)
+    edges = np.quantile(p_cal, np.linspace(0, 1, n_bins + 1))
+    edges[0] = 0.0; edges[-1] = 1.0
+    deciles = np.clip(np.digitize(p_cal, edges[1:-1]), 0, n_bins - 1)
+    hw = np.zeros(n_bins); pred = np.zeros(n_bins); obs = np.zeros(n_bins); ns = np.zeros(n_bins, int)
+    for k in range(n_bins):
+        m = deciles == k
+        n_k = int(m.sum())
+        if n_k == 0:
+            hw[k] = float("nan"); continue
+        pk, ok = float(p_cal[m].mean()), float(y[m].mean())
+        bias = abs(pk - ok)
+        se = float(np.sqrt(max(ok * (1 - ok), 1e-6) / max(n_k, 1)))
+        hw[k] = bias + z * se
+        pred[k] = pk; obs[k] = ok; ns[k] = n_k
+    # Smooth small-bin nans by neighbor average
+    for k in range(n_bins):
+        if np.isnan(hw[k]):
+            hw[k] = np.nanmean(hw)
+    report = {
+        "edges": [round(float(e), 4) for e in edges],
+        "n_per_bin": ns.tolist(),
+        "bin_pred": [round(float(x), 4) for x in pred],
+        "bin_obs": [round(float(x), 4) for x in obs],
+        "half_widths": [round(float(x), 4) for x in hw],
+        "mean_half_width": float(np.mean(hw)),
+    }
+    return edges, hw, report
+
+
+def apply_binned_intervals(p, edges, half_widths) -> tuple[np.ndarray, np.ndarray]:
+    """Map each scored PD into its val-decile bucket and apply the bucket's half-width."""
+    p = np.asarray(p, float)
+    deciles = np.clip(np.digitize(p, edges[1:-1]), 0, len(half_widths) - 1)
+    hw = half_widths[deciles]
+    return np.clip(p - hw, 0, 1), np.clip(p + hw, 0, 1)
+
+
+# --------------------------------------------------------------------------- #
 # Deliverable A — κ-shifted decision rule (uncertainty-aware approval)
 # --------------------------------------------------------------------------- #
 def _kappa_pnl(kappa, p, sigma, rev, exp_def, realized, idx) -> float:
@@ -113,8 +196,9 @@ def _cohort_cdr(dtd, dflag, n_weeks=13) -> np.ndarray:
 
 
 def fit_shape_shrinkage_c(cohort_loans: dict, model_shape: dict, val_n: dict,
-                          grid=(10, 25, 50, 100, 200), n_splits: int = 10,
-                          seed: int = 0, n_weeks: int = 13) -> tuple[float, dict]:
+                          grid=(5, 10, 20, 35, 50, 75, 100, 150, 200),
+                          n_splits: int = 10, seed: int = 0,
+                          n_weeks: int = 13) -> tuple[float, dict]:
     """Pick the Dirichlet concentration c for per-cohort SHAPE shrinkage by honest
     split-half cross-fit within validation (so c is not chosen by self-prediction).
 
@@ -125,9 +209,11 @@ def fit_shape_shrinkage_c(cohort_loans: dict, model_shape: dict, val_n: dict,
     mean held-out |CDR| error. cohort_loans[w] = (days_to_default, default_flag) arrays
     of approved labeled-val loans; model_shape[w] = model cumulative trajectory for w.
     """
-    rng = np.random.default_rng(seed)
     curve = {}
     for c in grid:
+        # Reset RNG per c so splits are identical across grid points (otherwise
+        # grid order changes the random state seen by each c and the winner shifts).
+        rng = np.random.default_rng(seed)
         tot, cells = 0.0, 0
         for w, (dtd, dflag) in cohort_loans.items():
             if val_n.get(w, 0) < 20 or w not in model_shape:
