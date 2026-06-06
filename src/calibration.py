@@ -106,6 +106,57 @@ def true_cohort_trajectory(val: pd.DataFrame, approved_mask: np.ndarray,
     return out
 
 
+def _cohort_cdr(dtd, dflag, n_weeks=13) -> np.ndarray:
+    """Realized cumulative default rate by loan-age week over a set of loans."""
+    dtd = np.asarray(dtd, float); dflag = np.asarray(dflag, float)
+    return np.array([np.mean((dflag == 1) & (dtd <= 7 * a)) for a in range(1, n_weeks + 1)])
+
+
+def fit_shape_shrinkage_c(cohort_loans: dict, model_shape: dict, val_n: dict,
+                          grid=(10, 25, 50, 100, 200), n_splits: int = 10,
+                          seed: int = 0, n_weeks: int = 13) -> tuple[float, dict]:
+    """Pick the Dirichlet concentration c for per-cohort SHAPE shrinkage by honest
+    split-half cross-fit within validation (so c is not chosen by self-prediction).
+
+    For each cohort: estimate the empirical default-timing increments on a random half
+    (A), blend toward the model band shape with concentration c
+    (blended = (n_A·emp + c·model)/(n_A+c)), and score the resulting cumulative curve
+    (× half-A level) against the realized CDR of the held-out half (B). c\* minimizes the
+    mean held-out |CDR| error. cohort_loans[w] = (days_to_default, default_flag) arrays
+    of approved labeled-val loans; model_shape[w] = model cumulative trajectory for w.
+    """
+    rng = np.random.default_rng(seed)
+    curve = {}
+    for c in grid:
+        tot, cells = 0.0, 0
+        for w, (dtd, dflag) in cohort_loans.items():
+            if val_n.get(w, 0) < 20 or w not in model_shape:
+                continue
+            ms_cum = np.asarray(model_shape[w], float)
+            if ms_cum[-1] <= 1e-6:
+                continue
+            ms = np.diff(ms_cum / ms_cum[-1], prepend=0.0)
+            n = len(dtd)
+            for _ in range(n_splits):
+                idx = rng.permutation(n); h = n // 2
+                A, B = idx[:h], idx[h:]
+                cdr_A = _cohort_cdr(dtd[A], dflag[A], n_weeks)
+                cdr_B = _cohort_cdr(dtd[B], dflag[B], n_weeks)
+                lvl = cdr_A[-1]
+                if lvl <= 1e-6:
+                    continue
+                emp = np.diff(cdr_A / lvl, prepend=0.0)
+                bl = (len(A) * emp + c * ms) / (len(A) + c)
+                bl = np.clip(bl, 0, None); s = bl.sum()
+                if s <= 0:
+                    continue
+                pred_cum = np.cumsum(bl / s) * lvl
+                tot += np.abs(pred_cum - cdr_B).sum(); cells += n_weeks
+        curve[float(c)] = tot / cells if cells else float("inf")
+    c_star = float(min(curve, key=curve.get))
+    return c_star, {"loco_mae": {float(k): round(v, 5) for k, v in curve.items()}}
+
+
 def b_conformal_halfwidth(pred: dict, true: dict, target: float = 0.90,
                           n_weeks: int = 13) -> np.ndarray:
     """Per-age conformal half-width = target-quantile of |true - pred| across cohorts."""

@@ -46,3 +46,25 @@ distribution (`survival.daily_dist_by_band`, rows sum to 1), integrated in
 - Note: `economics.expected_npv`'s `default_day_dist` branch omits the `pd_hat` factor
   (returns `(1-pd)·rev + Σdist·npv` instead of `+ pd·Σdist·npv`); it is dead code in the
   scored path, so left untouched — integration is done directly in `submit.py`.
+
+## Task 3 — hierarchical SHAPE shrinkage for B (target S_traj, 25%) — ACCEPTED
+
+Extends E4's per-cohort LEVEL shrinkage to the SHAPE. For each cohort, the empirical
+val timing increments are blended toward the model band shape, Dirichlet-style:
+`blended = (n_w·empirical + c·band_shape)/(n_w + c)`, renormalized, cumulative kept
+monotone (`submit.py` E6). The concentration c is chosen by **split-half cross-fit
+within validation** (`calibration.fit_shape_shrinkage_c`): estimate the shape on a random
+half of each cohort, score the blended curve against the held-out half's realized CDR —
+this avoids the c→0 self-prediction trap (a cohort's own realized shape predicting itself).
+
+- Grid LOCO (split-half) half-MAE: {10: 0.0290, **25: 0.0285**, 50: 0.0326, 100: 0.0292,
+  200: 0.0304} → **c\* = 25**.
+- B grid MAE vs realized val CDR (s1 §1.3 metric): **0.0125 → 0.0044**. Monotone: **True**.
+- Tail cohorts max abs error: cohort 5 **0.0326 → 0.0098**, cohort 13 **0.0406 → 0.0240**.
+- B interval coverage vs realized val CDR: **1.000** (≥ 0.88 guard; now over-covered →
+  tightened in Task 4b), mean width 0.0571 → 0.0565.
+- **Acceptance: realized-val MAE < 0.0125, tails shrink, monotone. PASS.**
+- Honesty: the 0.0044 grid MAE is partly in-sample (the point now incorporates val timing,
+  borrowed-strength as in E4); the split-half LOCO half-MAE (0.0285) is the honest
+  c-selection metric and confirms c>0 generalizes. Test benefit relies on the val→test
+  per-cohort shape transfer (same 13 calendar weeks), exactly as for the level shrinkage.

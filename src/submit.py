@@ -185,6 +185,18 @@ def build():
     va_cw = va_c["cohort_week"].to_numpy()
     val_n = {w: int((appr_va_lab & (va_cw == w)).sum()) for w in range(1, 14)}
     val_rate = {w: (true_traj[w][12] if val_n[w] > 0 else np.nan) for w in range(1, 14)}
+    # E6: hierarchical SHAPE shrinkage (mirrors E4's level shrinkage). Blend each
+    # cohort's empirical val timing increments toward the model band shape, concentration
+    # c_shape chosen by split-half cross-fit within val (honest LOCO, no self-prediction).
+    cohort_loans = {}
+    for w in range(1, 14):
+        mm = appr_va_lab & (va_cw == w)
+        if mm.any():
+            sw = va_c.loc[mm]
+            cohort_loans[w] = (pd.to_numeric(sw["days_to_default"], errors="coerce").fillna(0).to_numpy(float),
+                               sw["default_flag"].to_numpy(float))
+    c_shape, cinfo = cal.fit_shape_shrinkage_c(cohort_loans, pred_traj, val_n, seed=SEED)
+    print(f"[B-shape] c*={c_shape} | LOCO half-MAE {cinfo['loco_mae']}")
     hw = cal.b_conformal_halfwidth(pred_traj, true_traj)
     # scale the conformal band up until val coverage >= 90% (not needlessly wide)
     bcov = 0.0
@@ -213,6 +225,19 @@ def build():
         point_vec = contrib.mean(0)
         boot = np.array([contrib[rng.integers(0, len(contrib), len(contrib))].mean(0)
                          for _ in range(BOOT)])                     # BOOT x 13
+        # E6: shrink the cohort SHAPE toward the model band shape (concentration c_shape),
+        # using the val empirical timing where it exists. Tail cohorts (sparse, noisy
+        # timing) fall back to the stable band shape; data-rich cohorts follow the data.
+        m_w = point_vec[12]
+        if val_n.get(w, 0) > 0 and m_w > 1e-6 and not np.isnan(true_traj[w]).any() and true_traj[w][12] > 1e-6:
+            ms = np.diff(point_vec / m_w, prepend=0.0)
+            emp = np.diff(true_traj[w] / true_traj[w][12], prepend=0.0)
+            bl = (val_n[w] * emp + c_shape * ms) / (val_n[w] + c_shape)
+            bl = np.clip(bl, 0, None); bl = bl / bl.sum()
+            new_cum = np.cumsum(bl) * m_w
+            factor = new_cum / np.where(point_vec > 1e-12, point_vec, 1e-12)
+            point_vec = new_cum
+            boot = boot * factor[None, :]
         # E4: shrink the cohort LEVEL toward the val realized rate (same calendar week)
         m_w = point_vec[12]
         if val_n.get(w, 0) > 0 and m_w > 1e-6 and not np.isnan(val_rate[w]):
