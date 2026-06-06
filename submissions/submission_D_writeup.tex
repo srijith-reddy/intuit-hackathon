@@ -101,23 +101,24 @@ Deliverable~B reproduces this shape per cohort; a single smooth survival curve c
 \textbf{Deliverable A: decide on the NPV sign.} We approve iff
 $\E[\NPV_i \mid \text{approve}] > 0$ using the exact product economics: revenue
 $F_i + R_i r (T/365)$ if repaid, and $F_i + D_i(t^*_i - 1) + \mathrm{rec}_i - R_i$ if
-default occurs at day $t^*_i$. That is, we keep the fee plus interest on a loan that
-repays, but only the fee plus the daily draws collected before $t^*$ (less principal,
-plus $\approx 9\%$ recovery) on one that defaults---so a default costs less the later it
-lands. Because NPV is linear in $t^*$, the expectation uses the band-conditional expected
-default day. The break-even therefore sits at PD $\approx 0.39$, not $0.5$: even defaulters
-repay $\sim$74\% of the schedule through daily ACH before defaulting, so a $39\%$-PD applicant
-is still NPV-positive and a $0.5$ cutoff would leave money on the table. We approve 73\% of
-applicants; on realized validation outcomes this book returns $1.74\times$ the prior
-underwriter's P\&L.
+default at day $t^*_i$---we keep fee$+$interest if repaid, but only fee plus pre-$t^*$ draws
+(less principal, $+9\%$ recovery) on a default, so later defaults cost less. NPV is linear in
+$t^*$, so the expectation integrates the band-conditional default-day distribution exactly. The
+break-even sits at PD $\approx 0.39$, not $0.5$: even defaulters repay $\sim$74\% of the schedule
+first, so a $39\%$-PD applicant is still NPV-positive. We then shift the decision PD up by
+$\kappa\hat\sigma_i$ ($\hat\sigma_i$ the fold disagreement, $\kappa{=}1.25$ by cross-fit on realized
+val P\&L: out-of-fold \$3.76M vs \$3.73M at $\kappa{=}0$), declining the most uncertain
+near-break-even loans first. We approve 72\% of applicants; on realized validation the book
+returns $1.76\times$ the prior underwriter's P\&L.
 
 \textbf{Deliverable B: shape $\times$ level.}
 $\mathrm{CDR}_{w,a} = \mathrm{mean}_{i \in A_w}\, \PD_i \, S_{b(i)}(a)$---we average each
 approved cohort $A_w$'s per-loan risk over the timing shape, giving a curve that only rises.
 Because the PD model has no cohort signal (training predates the window), we shrink each
 cohort's \emph{level} toward the realized validation rate for the same calendar week
-(hierarchical-Bayes random effects; pseudo-count 75 = prior precision); validation and test
-span the identical 13 weeks, so this transfers.
+(pseudo-count 75) and its \emph{shape} toward the model band shape (Dirichlet $c{=}25$,
+split-half cross-fit), which pulls the sparse tail cohorts onto the data (MAE $0.013{\to}0.004$).
+Validation and test span the identical 13 weeks, so this transfers.
 
 \section{Causal reasoning \& counterfactual methodology}
 
@@ -127,7 +128,7 @@ and scale the effect accordingly.}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.36\textwidth]{shap_summary.png}
+\includegraphics[width=0.34\textwidth]{shap_summary.png}
 \caption{SHAP summary for the PD model: mean $|$SHAP$|$ ranking with per-feature
 direction (red high / blue low). High delinquency, utilization and volatility raise PD;
 high debt-service coverage and cash buffer lower it.}
@@ -153,43 +154,42 @@ proxies}---bureau and bank-feed symptoms of latent health (utilization, delinque
 and cash signals)---are symptoms as much as causes: editing the thermometer does not cure the
 fever, so we keep only the estimated causal fraction
 $\hat\lambda = \beta_{\text{adj}}/\beta_{\text{naive}}$ (sibling-adjusted logistic; per-family
-$\hat\lambda \approx 0.52,\,0.51,\,0.64$ for bureau, bank-feed, behavioral), averaged with the
-heuristic and falling back where $\hat\lambda \notin (0,1)$. Conditioning sets are chosen \emph{empirically} (Figure~\ref{fig:proxy}): an
-FDR-controlled sparse partial-correlation graph of the proxy block ($q{=}0.05$,
-$n{=}55$k) confirms one dominant latent-health factor (32\% of variance, $2.3\times$ the
-second) but flags ``siblings'' that are in fact \emph{descendants}---invoice delinquency
-and overdrafts are consequences of low cash (partial corr.\ $-0.78$), payroll regularity
-of revenue ($+0.50$). Conditioning on a descendant blocks the true causal path, so we
-exclude them from those features' adjustment sets, correcting
-$\hat\lambda_{\text{cash}}$ from an implausible $0.03$ (cash buffers mechanically fund
-the daily draw) to $0.44$.
+$\approx 0.52/0.51/0.64$ for bureau/bank-feed/behavioral), averaged with the heuristic, falling
+back where $\hat\lambda \notin (0,1)$. Conditioning sets are derived
+\emph{algorithmically} from an explicit DAG by the backdoor criterion---condition on a
+treatment's co-proxies of latent health, exclude its graph \emph{descendants}
+(Figure~\ref{fig:dag}). The FDR partial-correlation graph flags ``siblings'' that are really
+descendants---invoice delinquency and overdrafts follow low cash ($-0.78$), payroll regularity
+follows revenue ($+0.50$); PC and GES corroborate. Since conditioning on a descendant blocks the
+true causal path, excluding it by graph reachability corrects $\hat\lambda_{\text{cash}}$ from an
+implausible $0.03$ to $0.44$.
 \emph{Self-reports}---\code{stated\_annual\_revenue}, \code{stated\_time\_in\_business}---are
 returned at their observational PD: a different number on the form changes nothing about the
 business. Overstating revenue \emph{predicts} default ($38.6\%$ vs $16.1\%$), but \emph{forcing}
-a different statement causes nothing, so the interventional effect is $\approx 0$---formally,
+a different statement causes nothing, so the interventional effect is $\approx 0$---formally
 $\Pr(y \mid \mathrm{do}(\text{stated}), \mathbf{X}_{-\text{stated}}) =
-\Pr(y \mid \mathbf{X}_{-\text{stated}})$ when the claim itself does not cause default, the
-causally correct answer rather than naive re-prediction. \emph{Immutable or proxy-by-fiat} features
-(\code{sector}, \code{geography\_region}, \code{vintage\_years}, \code{has\_linked\_bank\_feed})
-are not manipulable levers but are forced into the query set; we perturb the model, shrink the
-effect, widen the interval, and flag them as proxy effects.
+\Pr(y \mid \mathbf{X}_{-\text{stated}})$, the causally correct answer, not naive re-prediction.
+\emph{Immutable/proxy-by-fiat} features (\code{sector}, \code{geography\_region},
+\code{vintage\_years}, \code{has\_linked\_bank\_feed}) are not levers but are queried anyway; we
+perturb the model, shrink, widen, and flag them.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.82\textwidth]{proxy_structure.png}
-\vspace{-0.5em}
-\caption{FDR-surviving partial correlations of the proxy block ($q{=}0.05$, $n{=}55$k; edge
-width $=|\text{partial corr.}|$, red $=$ negative) and its eigenvalue spectrum---one dominant
-latent-health factor (32\% of variance). The cash--invoice-delinquency edge ($-0.78$) is a
-descendant, not a sibling, so we exclude it from the adjustment set.}
-\label{fig:proxy}
+\includegraphics[width=0.92\textwidth]{causal_dag.png}
+\vspace{-0.6em}
+\caption{The explicit DAG. Latent health $H$ confounds every proxy (faint), so we adjust for a
+treatment's co-proxies of $H$; the three defended mechanistic edges (red) make invoice
+delinquency/overdrafts descendants of cash and payroll a descendant of revenue, which graph
+reachability excludes from those treatments' adjustment sets. The FDR partial-correlation graph
+($q{=}0.05$, $-0.78$/$+0.50$ edges) and PC/GES corroborate this structure.}
+\label{fig:dag}
 \end{figure}
 
 \textbf{Regulator defense.} Drivers are explained with SHAP over an inspectable,
 de-correlated feature set (Figure~\ref{fig:shap}). The leading drivers---invoice-payment
 delinquency, credit utilization, revenue volatility, requested amount, overdrafts, and the
-affordability ratios---are all recognized credit or affordability signals moving in the
-expected direction, and none is a prohibited or proxy-discriminatory attribute. Several queried
+affordability ratios---are all recognized credit/affordability signals in the expected
+direction, none a prohibited or proxy-discriminatory attribute. Several queried
 values lie outside observed support (e.g.\ \code{prior\_loans\_count} is in-support only 29\%
 of the time); these receive wider intervals and an explicit extrapolation caveat.
 
@@ -197,12 +197,11 @@ of the time); these receive wider intervals and an explicit extrapolation caveat
 features matches the gradient-boosted models (out-of-fold AUC $0.775$ vs $0.770$, equal
 Brier) and is in fact \emph{more} robust to the train-to-window drift (validation AUC
 $0.759$ vs $0.751$)---evidence the engineered space is near-linearly sufficient and the
-drivers directly interpretable. Its standardized coefficients agree in sign with SHAP on
-eight of the top ten features; the two exceptions (\code{buffer\_to\_payment},
-\code{debt\_to\_revenue}) are collinearity-driven sign flips---why we read drivers from SHAP,
-not raw coefficients. We rejected sequence and transformer architectures: no sequential
-structure, low-cardinality categoricals, discrimination data-limited at $\approx\!0.77$ AUC,
-and calibration---a scored component---favours the simpler, well-understood stack.
+drivers directly interpretable. Its coefficients agree in sign with SHAP on 8/10 top features
+(the two flips, \code{buffer\_to\_payment} and \code{debt\_to\_revenue}, are
+collinearity-driven---why we read SHAP, not raw coefficients). We rejected sequence/transformer models: no sequential structure,
+low-cardinality categoricals, $\approx\!0.77$-AUC data-limited discrimination, and calibration
+favours the simpler stack.
 
 \section{Calibration \& uncertainty quantification}
 
@@ -210,15 +209,13 @@ and calibration---a scored component---favours the simpler, well-understood stac
 size every interval by measured out-of-sample error rather than in-sample optimism.}
 
 \textbf{Point PD.} Isotonic calibration is \emph{refit on in-window validation} to correct the
-$17.5\%{\to}20.6\%$ train-to-window drift (the $a_0{\to}0$ power-prior limit: in-window
-likelihood sets the level, history discounted); it stays valid on the approved manifold and is
-extrapolated on declines.
+$17.5\%{\to}20.6\%$ train-to-window drift (power-prior $a_0{\to}0$ limit); it stays valid on the
+approved manifold and is extrapolated on declines.
 
 \textbf{Intervals (A, C).} Additive on the calibrated point, $p \pm \alpha z \sigma$: the point
 probability widened by how much the five folds disagree ($\sigma$), with the multiplier $\alpha$
-fit by five-fold \emph{cross-fit} on validation. Validated decile coverage is $\approx 0.90$ at mean width
-$\approx 0.06$, tighter than an earlier over-wide ($\approx 100\%$ coverage)
-configuration---the brief's ``contain the truth without being needlessly wide.''
+fit by five-fold \emph{cross-fit} on validation. Validated decile coverage is $\approx 0.90$ at mean width $\approx 0.06$---the brief's
+``contain the truth without being needlessly wide.''
 
 \textbf{Trajectory intervals (B).} A within-cohort bootstrap combined with a conformal band
 calibrated against the \emph{true} validation cohort trajectories; validated coverage
@@ -232,9 +229,9 @@ $\approx 0.92$. Out-of-support counterfactual intervals in C are widened further
 Deliverable & Metric & Value \\
 \midrule
 A --- PD model & out-of-fold AUC / Brier & $0.774$ / $0.117$ \\
-A --- policy & approve rate / P\&L vs.\ prior underwriter & $0.73$ / $1.74\times$ \\
+A --- policy & approve rate / P\&L vs.\ prior underwriter & $0.72$ / $1.76\times$ \\
 A --- intervals & decile coverage / mean width & $0.90$ / $0.06$ \\
-B --- trajectory & mean abs.\ error vs.\ realized CDR / coverage & $0.013$ / $0.92$ \\
+B --- trajectory & mean abs.\ error vs.\ realized CDR / coverage & $0.004$ / $0.92$ \\
 \bottomrule
 \end{tabular}
 \caption{Validation evidence (in-window). P\&L and B error use realized validation outcomes;
@@ -247,18 +244,21 @@ interval coverage is out-of-sample (cross-fit / conformal).}
 \emph{Our honest gaps trace to one fact---we never observe outcomes for declined
 applicants---so the decline and counterfactual estimates rest on extrapolation we cannot check.}
 
-\textbf{Self-report and immutable counterfactuals remain heuristic} (confounded proxies use
-the estimated $\hat\lambda$ above), and all C effects are unverifiable---the queried applicants
-have no labels.
-
-\textbf{Declines cannot be validated.} Approved and declined applicants never overlap (\S1), so
-reject inference is infeasible and only RD-style extrapolation remains (deferred); PD on
-declines---part of what A is scored on---stays unchecked.
+\textbf{The unverifiable core.} All C effects lack labels (the queried applicants were never
+decided), and declines never overlap the approved manifold (\S1)---so reject inference is
+infeasible, only RD-style local extrapolation remains (deferred), and decline-side PD, part of
+A's score, stays unchecked. Self-report and immutable counterfactuals stay heuristic; confounded
+proxies use the DAG-derived $\hat\lambda$ above, but latent $H$ breaks causal sufficiency---PC/GES
+corroborate the structure, they do not prove it.
 
 \looseness=-1
-\textbf{Timing and cohort corrections lean on the validation window}---they transfer only
-because validation and test share 13 weeks, though small per-cohort samples ($n \approx 150$)
-add variance. A is also marginally aggressive---a 20\% PD shift still raises P\&L---so a more
-conservative level would close the oracle gap.
+\textbf{Our val-tuned knobs} ($\kappa{=}1.25$, shape $c{=}25$, per-cohort level/shape) transfer to
+test only as far as the windows match (same 13 weeks; per-cohort $n\approx150$ adds variance). The
+$\kappa$ rule absorbs the flagged over-approval, but a residual oracle gap remains ($\approx 0.58$
+of perfect-foresight P\&L), irreducible without label foresight on declines.
+
+\looseness=-1
+\textbf{With another day:} RD extrapolation at the $0.273$ cutoff into declines, and one
+discrete-time hazard unifying PD and timing.
 
 \end{document}

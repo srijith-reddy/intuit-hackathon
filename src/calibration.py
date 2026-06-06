@@ -45,6 +45,46 @@ def fit_pd_interval_scale(p_cal, std, y, z=1.6448536269514722, target=0.90,
 
 
 # --------------------------------------------------------------------------- #
+# Deliverable A — κ-shifted decision rule (uncertainty-aware approval)
+# --------------------------------------------------------------------------- #
+def _kappa_pnl(kappa, p, sigma, rev, exp_def, realized, idx) -> float:
+    """Realized P&L on rows `idx` under approve iff E[NPV](p+κσ)>0."""
+    pe = np.clip(p[idx] + kappa * sigma[idx], 0.0, 1.0)
+    approve = ((1 - pe) * rev[idx] + pe * exp_def[idx]) > 0
+    return float(realized[idx][approve].sum())
+
+
+def fit_kappa_decision_shift(p, sigma, rev, exp_def, realized, grid=None,
+                             n_folds=5, seed=0):
+    """Choose κ for `approve iff E[NPV](p_i+κσ_i)>0` by realized-P&L on labeled val.
+
+    σ is the per-loan fold-ensemble disagreement (reused from the interval model).
+    Returns (kappa_star, info). kappa_star maximizes realized val P&L over the grid;
+    info carries the full κ→P&L curve, the 5-fold CROSS-FIT OOF P&L of the adaptive
+    rule (per-fold κ picked on the other 4 folds, scored on the held-out fold) and the
+    κ=0 baseline — the cross-fit OOF guards against κ overfit to the full val set.
+    """
+    from sklearn.model_selection import KFold
+    if grid is None:
+        grid = np.round(np.arange(0.0, 3.001, 0.25), 2)
+    p, sigma = np.asarray(p, float), np.asarray(sigma, float)
+    rev, exp_def = np.asarray(rev, float), np.asarray(exp_def, float)
+    realized = np.asarray(realized, float)
+    allidx = np.arange(len(p))
+    curve = {float(k): _kappa_pnl(k, p, sigma, rev, exp_def, realized, allidx) for k in grid}
+    kappa_star = float(max(curve, key=curve.get))
+    # cross-fit: per fold, pick κ on the train folds, score on the held-out fold
+    oof, picks = 0.0, []
+    for tri, tei in KFold(n_folds, shuffle=True, random_state=seed).split(allidx):
+        kbest = max(grid, key=lambda k: _kappa_pnl(k, p, sigma, rev, exp_def, realized, tri))
+        picks.append(float(kbest))
+        oof += _kappa_pnl(kbest, p, sigma, rev, exp_def, realized, tei)
+    return kappa_star, {"curve": {round(k, 2): round(v) for k, v in curve.items()},
+                        "pnl_kappa0": round(curve[0.0]), "pnl_kappa_star": round(curve[kappa_star]),
+                        "oof_pnl_adaptive": round(oof), "fold_picks": picks}
+
+
+# --------------------------------------------------------------------------- #
 # Deliverable B — trajectory interval calibration from val ground truth
 # --------------------------------------------------------------------------- #
 def true_cohort_trajectory(val: pd.DataFrame, approved_mask: np.ndarray,
@@ -64,6 +104,57 @@ def true_cohort_trajectory(val: pd.DataFrame, approved_mask: np.ndarray,
         cdr = np.array([np.mean(defaulted & (dtd <= 7 * a)) for a in range(1, n_weeks + 1)])
         out[w] = cdr
     return out
+
+
+def _cohort_cdr(dtd, dflag, n_weeks=13) -> np.ndarray:
+    """Realized cumulative default rate by loan-age week over a set of loans."""
+    dtd = np.asarray(dtd, float); dflag = np.asarray(dflag, float)
+    return np.array([np.mean((dflag == 1) & (dtd <= 7 * a)) for a in range(1, n_weeks + 1)])
+
+
+def fit_shape_shrinkage_c(cohort_loans: dict, model_shape: dict, val_n: dict,
+                          grid=(10, 25, 50, 100, 200), n_splits: int = 10,
+                          seed: int = 0, n_weeks: int = 13) -> tuple[float, dict]:
+    """Pick the Dirichlet concentration c for per-cohort SHAPE shrinkage by honest
+    split-half cross-fit within validation (so c is not chosen by self-prediction).
+
+    For each cohort: estimate the empirical default-timing increments on a random half
+    (A), blend toward the model band shape with concentration c
+    (blended = (n_A·emp + c·model)/(n_A+c)), and score the resulting cumulative curve
+    (× half-A level) against the realized CDR of the held-out half (B). c\* minimizes the
+    mean held-out |CDR| error. cohort_loans[w] = (days_to_default, default_flag) arrays
+    of approved labeled-val loans; model_shape[w] = model cumulative trajectory for w.
+    """
+    rng = np.random.default_rng(seed)
+    curve = {}
+    for c in grid:
+        tot, cells = 0.0, 0
+        for w, (dtd, dflag) in cohort_loans.items():
+            if val_n.get(w, 0) < 20 or w not in model_shape:
+                continue
+            ms_cum = np.asarray(model_shape[w], float)
+            if ms_cum[-1] <= 1e-6:
+                continue
+            ms = np.diff(ms_cum / ms_cum[-1], prepend=0.0)
+            n = len(dtd)
+            for _ in range(n_splits):
+                idx = rng.permutation(n); h = n // 2
+                A, B = idx[:h], idx[h:]
+                cdr_A = _cohort_cdr(dtd[A], dflag[A], n_weeks)
+                cdr_B = _cohort_cdr(dtd[B], dflag[B], n_weeks)
+                lvl = cdr_A[-1]
+                if lvl <= 1e-6:
+                    continue
+                emp = np.diff(cdr_A / lvl, prepend=0.0)
+                bl = (len(A) * emp + c * ms) / (len(A) + c)
+                bl = np.clip(bl, 0, None); s = bl.sum()
+                if s <= 0:
+                    continue
+                pred_cum = np.cumsum(bl / s) * lvl
+                tot += np.abs(pred_cum - cdr_B).sum(); cells += n_weeks
+        curve[float(c)] = tot / cells if cells else float("inf")
+    c_star = float(min(curve, key=curve.get))
+    return c_star, {"loco_mae": {float(k): round(v, 5) for k, v in curve.items()}}
 
 
 def b_conformal_halfwidth(pred: dict, true: dict, target: float = 0.90,

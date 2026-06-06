@@ -44,11 +44,30 @@ def _shrink_factor(feat: str) -> float:
     return SHRINK["manipulable"]
 
 
-def _enpv_decision(p, amount, t_bar, rec_frac):
+def _exp_npv_default(amount, dist, rec_frac):
+    """Exact E[NPV_default | default] = Σ_t w_b(t)·NPV_default(amount, t, rec) over the
+    band-conditional daily default-day distribution (dist: n×90, rows sum to 1).
+    NPV is linear in t*, so this equals NPV_default at the daily-mean default day."""
+    amount = np.asarray(amount, float)
+    days = np.arange(1, dist.shape[1] + 1, dtype=float)
+    rec = rec_frac * amount
+    npv_def_mat = ec.npv_if_default(amount[:, None], days[None, :], rec[:, None])  # n×90
+    return (dist * npv_def_mat).sum(axis=1)
+
+
+def _enpv_decision(p, amount, dist, rec_frac, sigma=None, kappa=0.0):
+    """Approve iff E[NPV](p+κσ) > 0 with exact timing integration.
+
+    Reported PD stays `p`; only the DECISION uses the uncertainty-shifted p+κσ
+    (κ≥0 → approve the marginal high-disagreement loans less; tuned on val P&L).
+    Returns (decision, exp_npv_default) — the latter is p-independent, for reporting.
+    """
     rev = ec.revenue_if_full(amount)
-    npv_def = ec.npv_if_default(amount, t_bar, rec_frac * amount)
-    enpv = (1 - p) * rev + p * npv_def
-    return (enpv > 0).astype(int), npv_def
+    exp_def = _exp_npv_default(amount, dist, rec_frac)
+    p_eff = np.clip(np.asarray(p, float) + kappa * np.asarray(sigma, float), 0.0, 1.0) \
+        if sigma is not None else np.asarray(p, float)
+    enpv = (1 - p_eff) * rev + p_eff * exp_def
+    return (enpv > 0).astype(int), exp_def
 
 
 def _engineer(raw, art):
@@ -75,6 +94,7 @@ def build():
     S_week = survival.weekly_shape(tr)
     S_band = survival.weekly_shape_by_band(tr)         # E3: band-conditional shape
     tbar_band = survival.mean_default_day_by_band(tr)  # E3: band-conditional E[t*]
+    daily_band = survival.daily_dist_by_band(tr)       # E5: band daily default-day dist for exact E[NPV]
 
     # ---- E1: recalibrate the PD level on in-window validation -------------
     # Train OOF base rate is 17.5% but the scored window runs ~20.6% -> refit the
@@ -103,17 +123,37 @@ def build():
             np.clip(raw_lab[tri], 0, 1), yva[tri])
         oof_cal[tei] = isof.transform(np.clip(raw_lab[tei], 0, 1))
     alpha, ar = cal.fit_pd_interval_scale(oof_cal, std_lab, yva, n_bins=10)
-    model.alpha = alpha
+    model.alpha = alpha   # kept for C's interval half-width (unchanged)
     print(f"[A-cal] cross-fit width alpha={alpha} -> val decile coverage={ar['coverage']} "
           f"mean width={ar['mean_width']}")
+
+    # ---- E5: tune the κ-shifted decision rule on labeled-val realized P&L --
+    # approve iff E[NPV](p+κσ)>0. The audit shows a +PD shift RAISES realized P&L
+    # (we over-approve marginal loans); κ shifts by the loan's own fold-disagreement
+    # σ, so the most uncertain near-break-even loans are declined first. κ chosen by
+    # realized P&L over a grid, with a 5-fold cross-fit OOF check (no test rows).
+    pva, _, _ = model.predict_calibrated(Xva)
+    dist_va = np.array(survival.band_lookup(va, daily_band), dtype=float)
+    amt_va = va["requested_amount"].to_numpy(float)
+    rev_va = ec.revenue_if_full(amt_va)
+    exp_def_va = _exp_npv_default(amt_va, dist_va, rec_frac)
+    tstar_va = pd.to_numeric(va["days_to_default"], errors="coerce").fillna(0).to_numpy(float)
+    recd_va = va["final_recovered_amount"].fillna(0).to_numpy(float)
+    realized_va = np.where(va["default_flag"].to_numpy() == 0,
+                           rev_va, ec.npv_if_default(amt_va, tstar_va, recd_va))
+    kappa, kinfo = cal.fit_kappa_decision_shift(
+        pva[vlab], sva[vlab], rev_va[vlab], exp_def_va[vlab], realized_va[vlab], seed=SEED)
+    print(f"[A-κ] κ*={kappa} | val P&L κ0=${kinfo['pnl_kappa0']:,} -> κ*=${kinfo['pnl_kappa_star']:,} "
+          f"| cross-fit OOF=${kinfo['oof_pnl_adaptive']:,} | folds={kinfo['fold_picks']}")
+    print(f"[A-κ] curve {kinfo['curve']}")
 
     # ============================ Deliverable A ============================
     scored = pd.concat([va, te], ignore_index=True)
     Xsc = _engineer(scored, art)
-    p, lo, hi = model.predict_calibrated(Xsc)
+    p, lo, hi, _, ssc = model.predict_calibrated(Xsc, return_mean_std=True)
     amt = scored["requested_amount"].to_numpy(float)
-    tbar_sc = np.array(survival.band_lookup(scored, tbar_band), dtype=float)  # E3 per-loan E[t*]
-    decision, npv_def = _enpv_decision(p, amt, tbar_sc, rec_frac)
+    dist_sc = np.array(survival.band_lookup(scored, daily_band), dtype=float)  # E5 per-loan daily dist
+    decision, npv_def = _enpv_decision(p, amt, dist_sc, rec_frac, sigma=ssc, kappa=kappa)
     pd.DataFrame({"applicant_id": scored["applicant_id"], "decision": decision,
                   "predicted_pd": p, "pd_lower_90": lo, "pd_upper_90": hi}
                  ).to_csv(OUT / "submission_A_decisions.csv", index=False)
@@ -123,10 +163,9 @@ def build():
           f"mean interval width={np.mean(hi-lo):.4f}")
 
     # ============================ Deliverable B ============================
-    # Calibrate B intervals against TRUE val cohort trajectories.
-    pva, _, _ = model.predict_calibrated(Xva)
-    tbar_va = np.array(survival.band_lookup(va, tbar_band), dtype=float)
-    dec_va, _ = _enpv_decision(pva, va["requested_amount"].to_numpy(float), tbar_va, rec_frac)
+    # Calibrate B intervals against TRUE val cohort trajectories. The approved-val
+    # cohort uses the SAME κ-shifted rule as A (consistency of the approved book).
+    dec_va, _ = _enpv_decision(pva, amt_va, dist_va, rec_frac, sigma=sva, kappa=kappa)
     appr_va_lab = (dec_va == 1) & vlab
     va_c = va.assign(cohort_week=data.assign_cohort_week(va), pd_hat=pva)
     pred_traj, true_traj = {}, {}
@@ -146,6 +185,18 @@ def build():
     va_cw = va_c["cohort_week"].to_numpy()
     val_n = {w: int((appr_va_lab & (va_cw == w)).sum()) for w in range(1, 14)}
     val_rate = {w: (true_traj[w][12] if val_n[w] > 0 else np.nan) for w in range(1, 14)}
+    # E6: hierarchical SHAPE shrinkage (mirrors E4's level shrinkage). Blend each
+    # cohort's empirical val timing increments toward the model band shape, concentration
+    # c_shape chosen by split-half cross-fit within val (honest LOCO, no self-prediction).
+    cohort_loans = {}
+    for w in range(1, 14):
+        mm = appr_va_lab & (va_cw == w)
+        if mm.any():
+            sw = va_c.loc[mm]
+            cohort_loans[w] = (pd.to_numeric(sw["days_to_default"], errors="coerce").fillna(0).to_numpy(float),
+                               sw["default_flag"].to_numpy(float))
+    c_shape, cinfo = cal.fit_shape_shrinkage_c(cohort_loans, pred_traj, val_n, seed=SEED)
+    print(f"[B-shape] c*={c_shape} | LOCO half-MAE {cinfo['loco_mae']}")
     hw = cal.b_conformal_halfwidth(pred_traj, true_traj)
     # scale the conformal band up until val coverage >= 90% (not needlessly wide)
     bcov = 0.0
@@ -174,6 +225,19 @@ def build():
         point_vec = contrib.mean(0)
         boot = np.array([contrib[rng.integers(0, len(contrib), len(contrib))].mean(0)
                          for _ in range(BOOT)])                     # BOOT x 13
+        # E6: shrink the cohort SHAPE toward the model band shape (concentration c_shape),
+        # using the val empirical timing where it exists. Tail cohorts (sparse, noisy
+        # timing) fall back to the stable band shape; data-rich cohorts follow the data.
+        m_w = point_vec[12]
+        if val_n.get(w, 0) > 0 and m_w > 1e-6 and not np.isnan(true_traj[w]).any() and true_traj[w][12] > 1e-6:
+            ms = np.diff(point_vec / m_w, prepend=0.0)
+            emp = np.diff(true_traj[w] / true_traj[w][12], prepend=0.0)
+            bl = (val_n[w] * emp + c_shape * ms) / (val_n[w] + c_shape)
+            bl = np.clip(bl, 0, None); bl = bl / bl.sum()
+            new_cum = np.cumsum(bl) * m_w
+            factor = new_cum / np.where(point_vec > 1e-12, point_vec, 1e-12)
+            point_vec = new_cum
+            boot = boot * factor[None, :]
         # E4: shrink the cohort LEVEL toward the val realized rate (same calendar week)
         m_w = point_vec[12]
         if val_n.get(w, 0) > 0 and m_w > 1e-6 and not np.isnan(val_rate[w]):
@@ -224,7 +288,11 @@ def build():
     # replace the heuristic full-strength perturbation with an estimated causal
     # fraction lambda_hat = beta_adj/beta_naive (sibling-adjusted logistic; only proxies
     # with lambda_hat in (0,1), else fall back to heuristic). Final = mean(heuristic, lambda).
-    lpath = PATHS.reports / "lambda_hat.csv"
+    # Prefer DAG-derived adjustment sets (reports/lambda_hat_dag.csv, src/causal_graph.py);
+    # fall back to the hand-coded version. The two agree by construction (regression test).
+    lpath = PATHS.reports / "lambda_hat_dag.csv"
+    if not lpath.exists():
+        lpath = PATHS.reports / "lambda_hat.csv"
     if lpath.exists():
         lt = pd.read_csv(lpath); lmap = dict(zip(lt.loc[lt.status == "use", "proxy"],
                                                  lt.loc[lt.status == "use", "lambda_hat"]))

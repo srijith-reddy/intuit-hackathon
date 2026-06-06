@@ -32,7 +32,7 @@ shap:           ## compute SHAP driver explanation (reports/figures/shap_summary
 
 pdf:            ## compile Deliverable D writeup (LaTeX) to PDF
 	cp submissions/submission_D_writeup.tex /tmp/
-	cp reports/figures/shap_summary.png reports/figures/fig01_prior_score_threshold.png reports/figures/fig03_cumulative_trajectory.png reports/figures/proxy_structure.png /tmp/
+	cp reports/figures/shap_summary.png reports/figures/fig01_prior_score_threshold.png reports/figures/fig03_cumulative_trajectory.png reports/figures/causal_dag.png /tmp/
 	cd /tmp && pdflatex -interaction=nonstopmode submission_D_writeup.tex >/dev/null 2>&1 \
 	  && pdflatex -interaction=nonstopmode submission_D_writeup.tex >/dev/null 2>&1
 	cp /tmp/submission_D_writeup.pdf submissions/submission_D_writeup.pdf
