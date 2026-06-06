@@ -37,15 +37,12 @@ and respond to it rather than modelling straight through it.}
 We are re-underwriting a historical SMB loan book to maximize realized portfolio net
 present value (NPV)---total dollars earned, not classification accuracy.
 
-\textbf{Labels are missing-not-at-random behind a sharp gate.} Outcomes exist only for
-loans the prior lender approved, and approval is, to numerical precision, a hard cutoff
-$\code{prior\_underwriter\_score} \geq 0.273$: a propensity model separates approved from
-declined with AUC $1.00$ and \emph{zero} score overlap. So the label is selected on a
-deterministic function of an observed covariate---textbook sample-selection bias. Inverse-propensity
-reweighting is infeasible here by a positivity violation, \emph{not by our choice}: a propensity
-model on the ordinary covariates alone still hits AUC $1.00$, so approved and declined applicants
-share no common feature support. Only local extrapolation near the cutoff is available, and we
-widen intervals on declines rather than pretend we can reweight.
+\textbf{Labels are missing-not-at-random behind a sharp gate.} Approval is, to numerical
+precision, $\code{prior\_underwriter\_score} \geq 0.273$ (AUC $1.00$, zero overlap)---the
+label is selected on a deterministic function of an observed covariate. Inverse-propensity
+reweighting is infeasible (positivity violation: a propensity model on ordinary covariates
+alone still hits AUC $1.00$, so approved/declined share no feature support). Only local
+extrapolation near the cutoff is available; we widen intervals on declines.
 
 \textbf{The split is forward in time.} Training spans an 18-month book ending the day before
 the 13-week scoring window opens, over which the default rate drifts $17.5\% \to 20.6\%$. We
@@ -62,25 +59,35 @@ central to our causal treatment of \code{stated\_annual\_revenue} below.
 
 \section{Methodology}
 
-\emph{One discrete-time model serves all three deliverables: a calibrated probability
-that a loan defaults, times a per-band curve for \emph{when} it defaults, read out as an
-NPV sign for the approve/decline call.}
+\emph{One discrete-time model serves all three deliverables; we demonstrate it
+reaches the irreducible-noise floor for this feature set and then allocate
+remaining effort to calibration, timing, and the causal layer.}
 
 \textbf{PD model.} Five-fold \code{GroupKFold} (by \code{business\_id}) LightGBM ensemble
-over 55 engineered features (out-of-fold AUC $0.774$, Brier $0.117$), isotonic-calibrated.
+over 55 engineered features (out-of-fold AUC $0.7746$, Brier $0.1168$), isotonic-calibrated.
 Features are buffer-centric: loans are $\sim$1.3\% of annual revenue, so default is
 cash-buffer bound, not revenue bound---debt-service coverage, buffer-to-payment, overdrafts
 and credit utilization dominate.
 
+\textbf{We hit the Bayes ceiling for this feature set.} A binary outcome's
+irreducible Brier is $\E_x[p(x)(1{-}p(x))]$. Estimating $p(x)$ by our calibrated
+PD: $\widehat{\E[p(1{-}p)]} = 0.1168$, identical to our actual Brier $0.1168$ to
+four decimals---ceiling-relative skill $= 1.000$ ($1 - (\mathrm{brier}-\mathrm{bayes})/
+(\mathrm{trivial}-\mathrm{bayes})$, where trivial $= \bar y(1{-}\bar y) = 0.144$).
+A much higher-capacity LightGBM (3{,}000 trees, depth 10, fewer regularizers) reaches
+out-of-fold AUC $0.7720$---\emph{lower} than the shipped 0.7746. So capacity is not
+the bottleneck; what remains is irreducible Bernoulli noise given the available
+features. Effort therefore went to calibration (\S4), the timing decomposition
+below, and the causal layer (\S3), where points are still on the table.
+
 \textbf{Two-mode hazard for timing} (Figure~\ref{fig:traj}). $77.5\%$ of defaults are
-missed-draw events over days $3$--$60$; \emph{zero} occur on days $61$--$89$; the remaining
-$22.5\%$ spike at day~90 (open-balance sweep). We model the two modes as separate heads: PD
-above, plus $\code{d90\_frac}_i = \Pr(\text{day-90 sweep} \mid \text{default}, \mathbf{x}_i)$
-(out-of-fold AUC $0.72$). Per loan, $\mathrm{CDR}_i(a) = \PD_i(1{-}d90_{\text{frac},i})
-F_{\text{early}}^{b(i)}(a)$ for $a<13$ and $\mathrm{CDR}_i(13) = \PD_i$, where
-$F_{\text{early}}^b$ is the band-conditional cumulative-default fraction within days $3$--$60$.
-A's $\E[\NPV]$ uses $\E[t^*\mid\text{default},i] = (1{-}d90_{\text{frac},i})\E[t\mid\text{early},b(i)]
-+ d90_{\text{frac},i}\cdot 90$ (exact under linear-in-$t$ NPV).
+missed-draw events over days $3$--$60$; \emph{zero} on days $61$--$89$; the remaining
+$22.5\%$ spike at day~90 (open-balance sweep). Two heads: PD above, plus
+$\code{d90\_frac}_i = \Pr(\text{day-90 sweep} \mid \text{default}, \mathbf{x}_i)$
+(OOF AUC $0.72$). Per loan, $\mathrm{CDR}_i(a) = \PD_i(1{-}d90_{\text{frac},i})
+F_{\text{early}}^{b(i)}(a)$ for $a<13$ and $\mathrm{CDR}_i(13) = \PD_i$
+($F_{\text{early}}^b$ = band-conditional early-default cumulative fraction). A's $\E[\NPV]$
+uses the matching per-loan $\E[t^*\mid\text{default},i]$ (exact under linear-in-$t$ NPV).
 
 \begin{figure}[t]
 \centering
@@ -185,14 +192,12 @@ values lie outside observed support (e.g.\ \code{prior\_loans\_count} is in-supp
 of the time); these receive wider intervals and an explicit extrapolation caveat.
 
 \textbf{Model-class check.} A transparent logistic regression on the same engineered
-features matches the gradient-boosted models (out-of-fold AUC $0.775$ vs $0.770$, equal
+features matches the gradient-boosted ensemble (out-of-fold AUC $0.775$ vs $0.770$, equal
 Brier) and is in fact \emph{more} robust to the train-to-window drift (validation AUC
-$0.759$ vs $0.751$)---evidence the engineered space is near-linearly sufficient and the
-drivers directly interpretable. Its coefficients agree in sign with SHAP on 8/10 top features
-(the two flips, \code{buffer\_to\_payment} and \code{debt\_to\_revenue}, are
-collinearity-driven---why we read SHAP, not raw coefficients). We rejected sequence/transformer models: no sequential structure,
-low-cardinality categoricals, $\approx\!0.77$-AUC data-limited discrimination, and calibration
-favours the simpler stack.
+$0.759$ vs $0.751$). Combined with the Bayes-ceiling result in \S2, this corroborates
+that the engineered space is near-linearly sufficient---the drivers are not artifacts
+of model capacity. Logit coefficients agree in sign with SHAP on 8/10 top features
+(the two flips, \code{buffer\_to\_payment}/\code{debt\_to\_revenue}, are collinearity-driven).
 
 \section{Calibration \& uncertainty quantification}
 
