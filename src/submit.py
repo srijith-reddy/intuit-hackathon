@@ -288,7 +288,11 @@ def build():
     # replace the heuristic full-strength perturbation with an estimated causal
     # fraction lambda_hat = beta_adj/beta_naive (sibling-adjusted logistic; only proxies
     # with lambda_hat in (0,1), else fall back to heuristic). Final = mean(heuristic, lambda).
-    lpath = PATHS.reports / "lambda_hat.csv"
+    # Prefer DAG-derived adjustment sets (reports/lambda_hat_dag.csv, src/causal_graph.py);
+    # fall back to the hand-coded version. The two agree by construction (regression test).
+    lpath = PATHS.reports / "lambda_hat_dag.csv"
+    if not lpath.exists():
+        lpath = PATHS.reports / "lambda_hat.csv"
     if lpath.exists():
         lt = pd.read_csv(lpath); lmap = dict(zip(lt.loc[lt.status == "use", "proxy"],
                                                  lt.loc[lt.status == "use", "lambda_hat"]))

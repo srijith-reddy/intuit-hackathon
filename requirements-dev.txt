@@ -131,3 +131,9 @@ webencodings==0.5.1
 websocket-client==1.9.0
 widgetsnbextension==4.0.15
 wrapt==2.2.1
+# Deliverable C DAG + causal-discovery diagnostic (src/causal_graph.py, audit p6)
+networkx==3.6.1
+causal-learn==0.1.4.7
+graphviz==0.21
+momentchi2==0.1.8
+pydot==4.0.1
