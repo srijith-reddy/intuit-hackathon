@@ -76,6 +76,26 @@ def mean_default_day_by_band(train: pd.DataFrame) -> dict:
     return out
 
 
+def daily_dist_by_band(train: pd.DataFrame, n_days: int = 90) -> dict:
+    """{band: w_b(t) for t=1..90, P(default day=t | default, band), sums to 1};
+    plus 'pooled' fallback. Used for A's EXACT timing integration of E[NPV]:
+    E[NPV]=(1-p)*rev + p*Σ_t w_b(t)*NPV_default(t). Since brief NPV is linear in t*,
+    Σ_t w_b(t)*NPV_default(t) == NPV_default(E_b[t]) == the daily-mean plug-in; this
+    form is the exact expectation and makes the day-90 mass explicit."""
+    def _dist(dd: np.ndarray) -> np.ndarray:
+        dd = dd[np.isfinite(dd)]
+        h = np.array([(dd == t).sum() for t in range(1, n_days + 1)], float)
+        s = h.sum()
+        return h / s if s > 0 else h
+    d = train.loc[data.labeled_mask(train) & (train["default_flag"] == 1)]
+    out = {"pooled": _dist(pd.to_numeric(d["days_to_default"], errors="coerce").to_numpy(float))}
+    for b, g in d.groupby(SEG_COL):
+        if len(g) < 100:
+            continue
+        out[int(b)] = _dist(pd.to_numeric(g["days_to_default"], errors="coerce").to_numpy(float))
+    return out
+
+
 def band_lookup(df: pd.DataFrame, table: dict, default_key: str = "pooled"):
     """Map each row's credit band to its entry in `table` (object array)."""
     bands = pd.to_numeric(df[SEG_COL], errors="coerce")

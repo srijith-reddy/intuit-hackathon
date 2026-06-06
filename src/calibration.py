@@ -45,6 +45,46 @@ def fit_pd_interval_scale(p_cal, std, y, z=1.6448536269514722, target=0.90,
 
 
 # --------------------------------------------------------------------------- #
+# Deliverable A — κ-shifted decision rule (uncertainty-aware approval)
+# --------------------------------------------------------------------------- #
+def _kappa_pnl(kappa, p, sigma, rev, exp_def, realized, idx) -> float:
+    """Realized P&L on rows `idx` under approve iff E[NPV](p+κσ)>0."""
+    pe = np.clip(p[idx] + kappa * sigma[idx], 0.0, 1.0)
+    approve = ((1 - pe) * rev[idx] + pe * exp_def[idx]) > 0
+    return float(realized[idx][approve].sum())
+
+
+def fit_kappa_decision_shift(p, sigma, rev, exp_def, realized, grid=None,
+                             n_folds=5, seed=0):
+    """Choose κ for `approve iff E[NPV](p_i+κσ_i)>0` by realized-P&L on labeled val.
+
+    σ is the per-loan fold-ensemble disagreement (reused from the interval model).
+    Returns (kappa_star, info). kappa_star maximizes realized val P&L over the grid;
+    info carries the full κ→P&L curve, the 5-fold CROSS-FIT OOF P&L of the adaptive
+    rule (per-fold κ picked on the other 4 folds, scored on the held-out fold) and the
+    κ=0 baseline — the cross-fit OOF guards against κ overfit to the full val set.
+    """
+    from sklearn.model_selection import KFold
+    if grid is None:
+        grid = np.round(np.arange(0.0, 3.001, 0.25), 2)
+    p, sigma = np.asarray(p, float), np.asarray(sigma, float)
+    rev, exp_def = np.asarray(rev, float), np.asarray(exp_def, float)
+    realized = np.asarray(realized, float)
+    allidx = np.arange(len(p))
+    curve = {float(k): _kappa_pnl(k, p, sigma, rev, exp_def, realized, allidx) for k in grid}
+    kappa_star = float(max(curve, key=curve.get))
+    # cross-fit: per fold, pick κ on the train folds, score on the held-out fold
+    oof, picks = 0.0, []
+    for tri, tei in KFold(n_folds, shuffle=True, random_state=seed).split(allidx):
+        kbest = max(grid, key=lambda k: _kappa_pnl(k, p, sigma, rev, exp_def, realized, tri))
+        picks.append(float(kbest))
+        oof += _kappa_pnl(kbest, p, sigma, rev, exp_def, realized, tei)
+    return kappa_star, {"curve": {round(k, 2): round(v) for k, v in curve.items()},
+                        "pnl_kappa0": round(curve[0.0]), "pnl_kappa_star": round(curve[kappa_star]),
+                        "oof_pnl_adaptive": round(oof), "fold_picks": picks}
+
+
+# --------------------------------------------------------------------------- #
 # Deliverable B — trajectory interval calibration from val ground truth
 # --------------------------------------------------------------------------- #
 def true_cohort_trajectory(val: pd.DataFrame, approved_mask: np.ndarray,
