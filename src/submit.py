@@ -123,7 +123,7 @@ def build():
             np.clip(raw_lab[tri], 0, 1), yva[tri])
         oof_cal[tei] = isof.transform(np.clip(raw_lab[tei], 0, 1))
     alpha, ar = cal.fit_pd_interval_scale(oof_cal, std_lab, yva, n_bins=10)
-    model.alpha = alpha
+    model.alpha = alpha   # kept for C's interval half-width (unchanged)
     print(f"[A-cal] cross-fit width alpha={alpha} -> val decile coverage={ar['coverage']} "
           f"mean width={ar['mean_width']}")
 

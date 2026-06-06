@@ -68,3 +68,55 @@ this avoids the c→0 self-prediction trap (a cohort's own realized shape predic
   borrowed-strength as in E4); the split-half LOCO half-MAE (0.0285) is the honest
   c-selection metric and confirms c>0 generalizes. Test benefit relies on the val→test
   per-cohort shape transfer (same 13 calendar weeks), exactly as for the level shrinkage.
+
+## Task 4a — normalized asymmetric conformal A intervals (target S_cal, 20%) — REVERTED
+
+Tried interval = [p+q_lo·σ, p+q_hi·σ] with q_lo,q_hi = 0.05/0.95 quantiles of the signed
+normalized residual (y−p)/σ (cross-fit on val).
+
+- **Result: mean width 0.064 → 0.83 (13× WORSE), decile coverage 1.0.** Reverted.
+- **Why it fails (principled):** the conformal score |y−p|/σ divides a *binary-outcome*
+  residual (|y−p| ≈ 0.2–0.8) by the *epistemic* ensemble σ (≈0.005–0.02), so normalized
+  residuals are O(20–80) and the 0.95 quantile (≈76) yields ~0.8-wide intervals. Conformal
+  that targets individual 0/1 outcomes inherently needs ~unit width; the scored object here
+  is the *binned default rate*, which the existing α-additive interval already covers at
+  0.90 decile coverage / 0.053–0.064 width. Acceptance (width < 0.064) impossible. Kept the
+  α-additive A interval unchanged (also what C's half-width depends on).
+
+## Task 4b — multiplier-bootstrap simultaneous B bands (target S_cal) — REVERTED
+
+Tried: iid N(1,1) per-loan multipliers → recompute cohort CDR per draw (500); band =
+point ± q_sup·SE(a), q_sup = 0.90 quantile of sup_a |dev|/SE. Replaces resample+conformal.
+
+- **Result: mean width 0.0565 → 0.0114 (narrower) but coverage COLLAPSES** — cell 1.000 →
+  0.675, simultaneous (whole-curve) 0.308. Acceptance (simultaneous ≥ 0.88) fails. Reverted.
+- **Why it fails:** the wild bootstrap captures only *within-cohort sampling* variance
+  (SE ≈ 0.002–0.005 for ~150-loan cohorts); the realized curve deviates from the point by
+  the *model/shape residual* (up to ~0.024), which the dropped conformal half-width was
+  covering. The pointwise-0.90 fallback is even narrower → worse coverage, so it does not
+  rescue it (the task's fallback is for the over-wide case, not under-coverage). Kept the
+  resample-bootstrap + conformal band (coverage 1.000, width 0.0565).
+
+---
+
+## Task 5 — final regenerate + audit (old vs new)
+
+`python -m src.submit` → validator **PASS**; `submission_C` restored byte-identical
+(`6c113d08…`); A & B regenerated. Accepted changes: Tasks 1, 2, 3. Reverted: 4a, 4b.
+
+| Metric (labeled-val realized) | Baseline | Final | Δ |
+|---|---|---|---|
+| A realized val P&L | $3,726,634 | **$3,772,684** | +$46,050 (+1.24%) |
+| A P&L cross-fit OOF (κ adaptive) | $3,726,634 | **$3,760,827** | +$34,193 (+0.92%) |
+| A capture vs oracle | 0.569 | **0.576** | +0.007 |
+| A P&L vs approve-all | 1.742 | **1.763** | +0.021 |
+| A approve rate (labeled val / full set) | 0.845 / 0.730 | 0.842 / 0.724 | slightly tighter |
+| A decile coverage / width | 0.90 / 0.064 | 0.90 / 0.064 | unchanged (4a reverted) |
+| B MAE vs realized val CDR | 0.0125 | **0.0044** | −0.0081 |
+| B tail max-abs: cohort 5 / 13 | 0.0326 / 0.0406 | **0.0098 / 0.0240** | both shrink |
+| B monotone / coverage / width | True / 1.00 / 0.0571 | True / 1.00 / 0.0565 | unchanged (4b reverted) |
+| C (counterfactuals) | 6c113d08 | 6c113d08 | untouched |
+
+Net: S_P&L (30%) and S_traj (25%) improved; S_cal (20%) unchanged (both interval
+redesigns failed acceptance and were reverted); S_C (10%) untouched. All cross-fit /
+within-val; no test tuning.
