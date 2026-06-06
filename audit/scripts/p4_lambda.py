@@ -35,11 +35,24 @@ def beta(cols, target_col):
     X = sm.add_constant(Z[cols]); m = sm.Logit(y, X).fit(disp=0); return m.params[target_col]
 
 print("\n=== lambda_hat = beta_adj(X | siblings) / beta_naive(X) ===")
+# Conditioning-set correction (from audit/scripts/proxy_structure_check.py):
+# valid adjustment conditions on CO-PROXIES of latent health, not on DOWNSTREAM
+# CONSEQUENCES of the feature itself (conditioning on a descendant blocks the
+# real causal path -> over-shrinks lambda). The FDR-controlled partial-correlation
+# graph flagged: invoice delinquency & overdrafts are consequences of low cash
+# (cash_p10 -- invoice_delinq partial corr -0.78), and payroll regularity is a
+# consequence of revenue stability (+0.50). Exclude them from those features' sets.
+DESCENDANTS = {
+    "observed_cash_balance_p10": ["invoice_payment_delinquency_rate",
+                                  "observed_overdraft_count_3mo"],
+    "observed_monthly_revenue_avg_3mo": ["payroll_regularity_score"],
+}
 rows=[]
 for fam, cols in FAM.items():
     for X in cols:
         b_naive = beta([X], X)
-        b_adj   = beta(block, X)          # adjust for ALL proxies (siblings across families)
+        cond = [c for c in block if c not in DESCENDANTS.get(X, [])]
+        b_adj   = beta(cond, X)           # adjust for co-proxies, minus X's descendants
         lam = b_adj/b_naive if abs(b_naive)>1e-6 else np.nan
         ok = (0 < lam < 1)
         rows.append((fam, X, round(b_naive,3), round(b_adj,3), round(lam,3),
