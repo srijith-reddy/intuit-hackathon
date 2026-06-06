@@ -1,10 +1,16 @@
-"""Default-timing structure shared by Deliverables A (E[NPV]) and B (trajectory).
+"""Default-timing tables shared by Deliverables A (E[NPV]) and B (trajectory).
 
-Keystone insight (brief p.9): NPV depends on the default *day*, and B is the
-cumulative-default curve, so both consume one timing model. We model the per-loan
-cumulative curve as F_i(t) = PD_i * S(t), where S(t) is the canonical normalized
-shape learned on train (S(90)=1). The shape is ~invariant across risk segments
-(validated in notebook 02), so "shape x level" is robust and monotone by design.
+NPV depends on the default DAY (a day-5 default loses ~principal; a day-55 default
+nearly breaks even), and B is the cumulative-default curve — so both deliverables
+consume one timing model. Two views are exposed:
+
+  - Pooled / band-conditional weekly shape S_b(a) — `F_i(t) = PD_i · S_{b(i)}(t)`.
+    Simple, monotone, robust; smooths the data's bimodal structure.
+  - Two-mode tables (F_early + E[t|early] + day-90 mass) — the live decomposition,
+    preserves the deterministic dead zone on days 61-89 cell-by-cell.
+
+`SEG_COL = owner_personal_credit_band` is the per-loan segment for all band-conditional
+tables (clean, ordinal, observed, varies ~13 days in median DTD across bands).
 """
 from __future__ import annotations
 
@@ -43,10 +49,9 @@ def mean_recovery_frac(train: pd.DataFrame) -> float:
 
 
 # --------------------------------------------------------------------------- #
-# E3 — segment-conditional timing (shape varies ~13 days by credit band).
-# Risk-segment = owner_personal_credit_band (observed, clean). Worse credit
-# defaults earlier; better credit carries more day-90 mass. Pooled shape mis-times
-# per-segment, so B and A use a band-conditional shape, falling back to pooled.
+# Band-conditional timing. Default timing varies by ~13 days in median across
+# credit bands (worse credit fails earlier; better credit carries more day-90
+# mass). All `*_by_band` tables fall back to `'pooled'` for unseen bands.
 # --------------------------------------------------------------------------- #
 SEG_COL = "owner_personal_credit_band"
 
@@ -77,11 +82,10 @@ def mean_default_day_by_band(train: pd.DataFrame) -> dict:
 
 
 def daily_dist_by_band(train: pd.DataFrame, n_days: int = 90) -> dict:
-    """{band: w_b(t) for t=1..90, P(default day=t | default, band), sums to 1};
-    plus 'pooled' fallback. Used for A's EXACT timing integration of E[NPV]:
-    E[NPV]=(1-p)*rev + p*Σ_t w_b(t)*NPV_default(t). Since brief NPV is linear in t*,
-    Σ_t w_b(t)*NPV_default(t) == NPV_default(E_b[t]) == the daily-mean plug-in; this
-    form is the exact expectation and makes the day-90 mass explicit."""
+    """Per-band daily distribution P(default day=t | default, band) for t=1..90,
+    plus 'pooled' fallback. Used by the single-mode E[NPV] integration path; the
+    live two-mode path uses `mean_early_default_day_by_band` + d90_frac instead.
+    """
     def _dist(dd: np.ndarray) -> np.ndarray:
         dd = dd[np.isfinite(dd)]
         h = np.array([(dd == t).sum() for t in range(1, n_days + 1)], float)
@@ -104,13 +108,12 @@ def band_lookup(df: pd.DataFrame, table: dict, default_key: str = "pooled"):
 
 
 # --------------------------------------------------------------------------- #
-# Two-mode shape (Iter2): early-default cumulative + day-90 point mass.
-# Brief structural observation: defaults are bimodal — days 3-60 (missed-draw,
-# 77.5% of defaults) then exactly zero between 61-89 then day-90 sweep (22.5%).
-# This is structurally exact in the data; pooled or band-conditional shapes
-# smooth it. Per-loan: CDR_i(a) = P_early_i · F_early(a)  for a in [1,12]
-#                     CDR_i(13) = P_early_i + P_d90_i = PD_i
-# where F_early(a) is cumulative early-default fraction at day 7a (F_early(9)=1).
+# Two-mode timing tables. Defaults are bimodal: 77.5% in days 3-60 (missed draws)
+# then ZERO defaults on days 61-89, then 22.5% at day 90 (open-balance sweep).
+# Per-loan CDR_i(a) = P_early_i · F_early^{b(i)}(a) for a < 13, CDR_i(13) = PD_i,
+# with P_early_i = PD_i · (1 − d90_frac_i) from the d90 head. F_early is normalized
+# at week 9 (day 63 is past the early window) so weeks 9-13 are flat at 1, matching
+# the data's deterministic dead zone.
 # --------------------------------------------------------------------------- #
 def early_cumulative_shape(train: pd.DataFrame, n_weeks: int = 13) -> np.ndarray:
     """F_early(a) for a=1..13: fraction of EARLY defaults (days 3-60) seen by day 7a,

@@ -2,10 +2,10 @@
 
     python -m src.submit            # builds submissions/ and runs the validator
 
-Deliverables (brief weights): A P&L 30%, B trajectory 25%, calibration 20%,
-C counterfactual 10%, writeup 15%. A decides via E[NPV] sign; B = canonical weekly
-shape x per-cohort approved mean PD; C = registry do() with causal treatment by
-feature type. Intervals are calibrated on validation (see src/calibration.py).
+The decision rule is `approve iff E[NPV] > 0` (brief NPV, not a flat PD threshold).
+A and B share one PD model and one two-mode timing decomposition (early-default
+hazard + day-90 sweep). C uses the same model under do() with feature-type-aware
+causal shrinkage. Intervals are calibrated on the in-window validation set.
 """
 from __future__ import annotations
 
@@ -22,11 +22,15 @@ from src.config import PATHS, SEED, set_seeds
 OUT = PATHS.submissions
 BOOT = 500
 
-# C — causal treatment of the intervention target (brief: match TRUE interventional
-# effect, not naive re-prediction). Shrink the naive perturbation toward the
-# observational PD by feature type.
-SELF_REPORT = {"stated_annual_revenue", "stated_time_in_business"}  # do() = a claim, ~0 causal effect
-IMMUTABLE_PROXY = {  # forced do() on non-manipulable features -> partial effect, wider interval
+# C: per-query causal shrinkage by feature type. A self-report changes a CLAIM, not
+# the borrower's cash flow → true interventional effect ≈ 0 (the observational PD is
+# the right answer, not naive re-prediction). Immutable/proxy features are not levers
+# but are queried anyway → half the naive perturbation, wider interval. Manipulable
+# features (requested_amount + verifiable signals) get the full registry-propagated
+# perturbation. Confounded proxies (bureau / bank-feed) additionally use the
+# DAG-derived λ̂ (see reports/lambda_hat_dag.csv, applied below).
+SELF_REPORT = {"stated_annual_revenue", "stated_time_in_business"}
+IMMUTABLE_PROXY = {
     "sector", "geography_region", "vintage_years", "employee_count_bucket",
     "has_linked_bank_feed", "prior_loans_count", "prior_loans_default_count",
     "prior_loans_amount_total", "account_age_days", "platform_active_months",
@@ -45,22 +49,24 @@ def _shrink_factor(feat: str) -> float:
 
 
 def _exp_npv_default(amount, dist, rec_frac):
-    """Exact E[NPV_default | default] = Σ_t w_b(t)·NPV_default(amount, t, rec) over the
-    band-conditional daily default-day distribution (dist: n×90, rows sum to 1).
-    NPV is linear in t*, so this equals NPV_default at the daily-mean default day."""
+    """E[NPV | default] under a per-loan daily default-day distribution.
+
+    `dist` is n×90; each row sums to 1. NPV is linear in t*, so this returns the
+    exact expectation. Used by the legacy single-mode decision path; the live
+    pipeline uses `_exp_npv_default_two_mode` for per-loan timing precision.
+    """
     amount = np.asarray(amount, float)
     days = np.arange(1, dist.shape[1] + 1, dtype=float)
     rec = rec_frac * amount
-    npv_def_mat = ec.npv_if_default(amount[:, None], days[None, :], rec[:, None])  # n×90
+    npv_def_mat = ec.npv_if_default(amount[:, None], days[None, :], rec[:, None])
     return (dist * npv_def_mat).sum(axis=1)
 
 
 def _enpv_decision(p, amount, dist, rec_frac, sigma=None, kappa=0.0):
-    """Approve iff E[NPV](p+κσ) > 0 with exact timing integration.
-
-    Reported PD stays `p`; only the DECISION uses the uncertainty-shifted p+κσ
-    (κ≥0 → approve the marginal high-disagreement loans less; tuned on val P&L).
-    Returns (decision, exp_npv_default) — the latter is p-independent, for reporting.
+    """Approve iff E[NPV](p+κσ) > 0. Reported PD stays `p`; only the DECISION uses
+    the uncertainty-shifted p+κσ (declines the most-uncertain near-break-even loans
+    first). σ is the per-loan fold-ensemble disagreement; κ is tuned on val P&L.
+    Returns (decision, exp_npv_default).
     """
     rev = ec.revenue_if_full(amount)
     exp_def = _exp_npv_default(amount, dist, rec_frac)
@@ -71,11 +77,11 @@ def _enpv_decision(p, amount, dist, rec_frac, sigma=None, kappa=0.0):
 
 
 def _exp_npv_default_two_mode(amount, d90_frac, early_mean_day, rec_frac):
-    """Two-mode E[NPV|default,i] = (1-d90)·NPV(t=E[early]) + d90·NPV(t=90).
+    """E[NPV | default] decomposed by failure mode: early miss-draw vs day-90 sweep.
 
-    NPV is linear in t*, so this is the exact expectation under the two-mode
-    timing model — early defaulters average ~31.5 days, late defaulters at day 90.
-    `early_mean_day` is per-loan (band-derived) E[t*|early]; `d90_frac` per-loan.
+    Per-loan E[t*|default] = (1-d90)·E[t|early] + d90·90 → exact under linear-in-t*
+    NPV. Late defaulters cost ~zero (almost full schedule paid), so loans with high
+    d90_frac get materially better E[NPV] than the pooled approximation.
     """
     amount = np.asarray(amount, float)
     d90 = np.asarray(d90_frac, float)
@@ -87,7 +93,7 @@ def _exp_npv_default_two_mode(amount, d90_frac, early_mean_day, rec_frac):
 
 
 def _enpv_decision_two_mode(p, amount, d90_frac, early_mean_day, rec_frac, sigma=None, kappa=0.0):
-    """Two-mode version of _enpv_decision: per-loan timing via d90 classifier."""
+    """`_enpv_decision` with per-loan two-mode timing — the live decision rule."""
     rev = ec.revenue_if_full(amount)
     exp_def = _exp_npv_default_two_mode(amount, d90_frac, early_mean_day, rec_frac)
     p_eff = np.clip(np.asarray(p, float) + kappa * np.asarray(sigma, float), 0.0, 1.0) \
@@ -115,21 +121,22 @@ def build():
     print(f"[model] OOF AUC={roc_auc_score(y, oof):.4f} Brier={brier_score_loss(y, oof):.4f}")
 
     from sklearn.isotonic import IsotonicRegression
-    t_bar = survival.mean_default_day(tr)
+    # Timing tables: per-band shapes and conditional means used by both A and B.
+    # Two-mode split (early days 3-60 vs day-90 sweep) is structural in the data:
+    # zero defaults occur on days 61-89, so the pooled curve smooths a discontinuity
+    # the per-mode tables preserve.
     rec_frac = survival.mean_recovery_frac(tr)
     S_week = survival.weekly_shape(tr)
-    S_band = survival.weekly_shape_by_band(tr)         # E3: band-conditional shape
-    tbar_band = survival.mean_default_day_by_band(tr)  # E3: band-conditional E[t*]
-    daily_band = survival.daily_dist_by_band(tr)       # E5: band daily default-day dist for exact E[NPV]
-    # Iter2 two-mode hazard: F_early(a) per-band (cumulative early-default fraction at day 7a).
+    S_band = survival.weekly_shape_by_band(tr)
+    daily_band = survival.daily_dist_by_band(tr)
     F_early_band = survival.early_cumulative_shape_by_band(tr)
-    early_mean_band = survival.mean_early_default_day_by_band(tr)  # for A's per-loan E[t*]
+    early_mean_band = survival.mean_early_default_day_by_band(tr)
     print(f"[two-mode] E[t*|early] pooled={early_mean_band['pooled']:.2f} "
           f"band={ {k: round(v,1) for k,v in early_mean_band.items() if k!='pooled'} }")
-    # ---- Iter2: train d90-classifier on defaulters ------------------------
-    # P(day-90 sweep | default, features). Combined per-loan probabilities are
-    # P_d90 = PD * p_d90_frac, P_early = PD - P_d90. Used for B's per-loan shape:
-    # CDR_i(a) = P_early_i · F_early(a) for a in [1,12]; CDR_i(13) = PD_i.
+
+    # Second prediction head: P(day-90 sweep | default, features). Combined with PD
+    # gives per-loan P_early = PD·(1-d90), P_d90 = PD·d90 — the two probabilities
+    # that drive B's per-loan CDR shape and A's E[NPV] per-loan timing.
     def_mask = lab & (tr["default_flag"] == 1)
     Xd = F.model_features(Xtr_all)[def_mask.values]
     yd = (pd.to_numeric(tr.loc[def_mask, "days_to_default"], errors="coerce") >= 89).astype(int).to_numpy()
@@ -156,11 +163,11 @@ def build():
     def _predict_d90_frac(X_in):
         return np.clip(iso_d90.transform(_predict_d90_frac_raw(X_in)), 0, 1)
 
-    # ---- E1: recalibrate the PD level on in-window validation -------------
-    # Train OOF base rate is 17.5% but the scored window runs ~20.6% -> refit the
-    # isotonic calibrator on labeled val (truly held out from the full ensemble) so
-    # the level matches the deployment window. Fixes the under-prediction the audit
-    # found leaking into both S_cal and S_P&L.
+    # Recalibrate PD level on the in-window validation set. Train default rate is
+    # 17.5% but the scored window runs 20.6% (forward-in-time drift), so the
+    # train-OOF isotonic systematically under-predicts. Refit on labeled val to
+    # match the deployment window's base rate — feeds both the decision rule and
+    # the per-cohort calibration that drives B.
     Xva = _engineer(va, art)
     vlab = data.labeled_mask(va).to_numpy()
     yva = va.loc[vlab, "default_flag"].astype(int).to_numpy()
@@ -169,11 +176,11 @@ def build():
     model.iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(
         np.clip(mva[vlab], 0, 1), yva)
     after = float(model.iso.transform(np.clip(mva[vlab], 0, 1)).mean())
-    print(f"[E1] recalibrated on val: mean PD {before:.3f}->{after:.3f} (val rate {yva.mean():.3f})")
+    print(f"[cal] recalibrated PD on val: mean {before:.3f}->{after:.3f} (val rate {yva.mean():.3f})")
 
-    # ---- E2: calibrate A interval width via CROSS-FIT on val --------------
-    # Fit width on out-of-fold calibrated PD so coverage reflects real calibration
-    # error (in-sample would collapse the width to ~0 after E1's val refit).
+    # Interval-width scale α fit by cross-fit on val. We cross-fit the isotonic so
+    # the residuals reflect honest out-of-sample calibration error — fitting on the
+    # full val would collapse the residual to zero after the refit above.
     from sklearn.model_selection import KFold
     _, _, _, mva, sva = model.predict_calibrated(Xva, return_mean_std=True)
     raw_lab, std_lab = mva[vlab], sva[vlab]
@@ -183,17 +190,14 @@ def build():
             np.clip(raw_lab[tri], 0, 1), yva[tri])
         oof_cal[tei] = isof.transform(np.clip(raw_lab[tei], 0, 1))
     alpha, ar = cal.fit_pd_interval_scale(oof_cal, std_lab, yva, n_bins=10)
-    model.alpha = alpha   # kept for C's interval half-width (unchanged)
+    model.alpha = alpha   # reused for C's interval half-width
     print(f"[A-cal] cross-fit width alpha={alpha} -> val decile coverage={ar['coverage']} "
           f"mean width={ar['mean_width']}")
 
-    # ---- E5: tune the κ-shifted decision rule on labeled-val realized P&L --
-    # approve iff E[NPV](p+κσ)>0. The audit shows a +PD shift RAISES realized P&L
-    # (we over-approve marginal loans); κ shifts by the loan's own fold-disagreement
-    # σ, so the most uncertain near-break-even loans are declined first. κ chosen by
-    # realized P&L over a grid, with a 5-fold cross-fit OOF check (no test rows).
+    # κ-shifted decision rule: approve iff E[NPV](p + κσ) > 0. κ shifts each loan's
+    # decision PD by its own fold disagreement, so loans the boosters disagree on are
+    # treated more conservatively. κ tuned on realized val P&L with cross-fit guard.
     pva, _, _ = model.predict_calibrated(Xva)
-    # Iter2: per-loan d90_frac for val + per-band E[t*|early] for two-mode E[NPV].
     Xva_m_for_d90 = F.model_features(Xva)
     d90_va = _predict_d90_frac(Xva_m_for_d90)
     em_va = np.array([early_mean_band.get(int(b), early_mean_band["pooled"]) if pd.notna(b)
@@ -212,11 +216,12 @@ def build():
           f"| cross-fit OOF=${kinfo['oof_pnl_adaptive']:,} | folds={kinfo['fold_picks']}")
     print(f"[A-κ] curve {kinfo['curve']}")
 
-    # ---- Iter1B: per-cohort PD level shrinkage for A -----------------------
-    # Audit s1 1.1 shows cohort 13 over-predicted (+0.05), cohort 5 under-predicted (-0.04).
-    # Val and test span SAME 13 calendar weeks => the val cohort rate is a usable level
-    # anchor for the test cohort. Shrunk_rate_w = (n_w·val_rate_w + K·pred_rate_w)/(n_w+K),
-    # scale_w = shrunk_rate_w / pred_rate_w. Mirrors B's E4 level shrinkage at A level.
+    # Per-cohort PD level shrinkage. Val and test span the same 13 calendar weeks,
+    # so the val realized cohort default rate is the only in-window anchor for the
+    # test cohort level the PD model cannot see (train predates the cohort window).
+    # `gap_threshold` keeps the adjustment surgical — only cohorts whose val rate
+    # differs from the model rate by enough to be likely-real (not just sampling
+    # noise on n≈150) get scaled, preserving the pooled decile calibration.
     va_cw_arr = data.assign_cohort_week(va).to_numpy()
     yva_full = pd.to_numeric(va["default_flag"], errors="coerce").to_numpy()
     pcoh_scale = cal.per_cohort_pd_scale(
@@ -228,16 +233,15 @@ def build():
     scored = pd.concat([va, te], ignore_index=True)
     Xsc = _engineer(scored, art)
     p, lo, hi, _, ssc = model.predict_calibrated(Xsc, return_mean_std=True)
-    # Apply per-cohort scaling to p (only where cohort_week is in 1..13)
+    # Apply per-cohort PD scaling (no-op outside the 13 weeks); recenter intervals.
     sc_cw = data.assign_cohort_week(scored).to_numpy()
     scale_arr = np.array([pcoh_scale.get(int(w), 1.0) if pd.notna(w) else 1.0 for w in sc_cw])
     p_pre = p.copy()
     p = np.clip(p * scale_arr, 0, 1)
-    # Re-derive intervals on the scaled point (preserve width = α·z·σ; recenter on p)
     half = model.alpha * model.z90 * ssc
     lo = np.clip(p - half, 0, 1); hi = np.clip(p + half, 0, 1)
     amt = scored["requested_amount"].to_numpy(float)
-    # Iter2: per-loan two-mode E[NPV] uses d90_frac + band-conditional early mean.
+    # Per-loan timing for E[NPV]: d90 head + band-conditional early-mean day.
     d90_sc = _predict_d90_frac(F.model_features(Xsc))
     em_sc = np.array([early_mean_band.get(int(b), early_mean_band["pooled"]) if pd.notna(b)
                       else early_mean_band["pooled"]
@@ -254,13 +258,13 @@ def build():
           f"mean |p−p_pre|={np.mean(np.abs(p-p_pre)):.4f}")
 
     # ============================ Deliverable B ============================
-    # Calibrate B intervals against TRUE val cohort trajectories. The approved-val
-    # cohort uses the SAME κ-shifted rule as A (consistency of the approved book).
+    # Calibrate B against the val cohort trajectories the same κ-shifted policy
+    # produces — keeps the approved-book definition consistent between A and B.
     dec_va, _ = _enpv_decision_two_mode(pva, amt_va, d90_va, em_va, rec_frac,
                                         sigma=sva, kappa=kappa)
     appr_va_lab = (dec_va == 1) & vlab
-    # Iter2 full two-mode: per-loan CDR_i(a) = P_early_i · F_early[band](a) for a<13;
-    # CDR_i(13) = PD_i. Consistent with the two-mode A decision rule (same loans).
+    # Per-loan two-mode CDR: weeks 1-12 are early-default mass scaled by the band-
+    # conditional F_early; week 13 jumps by the day-90 mass (= remaining PD).
     va_c = va.assign(cohort_week=data.assign_cohort_week(va),
                      pd_hat=pva, d90_frac=d90_va,
                      p_early=pva * (1 - d90_va), p_d90=pva * d90_va)
@@ -269,25 +273,26 @@ def build():
         m = appr_va_lab & (va_c["cohort_week"].to_numpy() == w)
         if m.any():
             sub = va_c.loc[m]
-            Fe = np.array(survival.band_lookup(sub, F_early_band))     # n x 13
-            contrib = Fe * sub["p_early"].to_numpy()[:, None]           # n x 13
+            Fe = np.array(survival.band_lookup(sub, F_early_band))
+            contrib = Fe * sub["p_early"].to_numpy()[:, None]
             contrib[:, 12] = sub["pd_hat"].to_numpy()                   # week-13 = full PD
             pred_traj[w] = contrib.mean(0)
         else:
             pred_traj[w] = S_week * np.nan
     true_traj = cal.true_cohort_trajectory(va, appr_va_lab)
-    # E4: per-cohort level signal. Val & test span the SAME 13 weeks, so the val
-    # realized approved cohort rate informs the test cohort level the PD model can't
-    # see (train predates the cohorts). Shrink val rate toward the model level.
-    # Iter5: KB lowered 75 -> 15 to tighten cohort 13 over-prediction (val rate 0.07
-    # vs model 0.09); other cohorts move only slightly because their model/val gap is small.
+    # Per-cohort level shrinkage toward the val realized rate. KB controls how much
+    # weight the val rate gets vs the model: small KB favors val (good when val/test
+    # share calendar weeks and macro environment); larger KB protects against
+    # sampling noise on cohorts with small n.
     KB = 15.0
     va_cw = va_c["cohort_week"].to_numpy()
     val_n = {w: int((appr_va_lab & (va_cw == w)).sum()) for w in range(1, 14)}
     val_rate = {w: (true_traj[w][12] if val_n[w] > 0 else np.nan) for w in range(1, 14)}
-    # E6: hierarchical SHAPE shrinkage (mirrors E4's level shrinkage). Blend each
-    # cohort's empirical val timing increments toward the model band shape, concentration
-    # c_shape chosen by split-half cross-fit within val (honest LOCO, no self-prediction).
+    # Per-cohort SHAPE shrinkage: Dirichlet blend of empirical week-by-week timing
+    # toward the model band shape. c_shape selected by split-half cross-fit within
+    # val; we override toward more-empirical because the LOCO splits (n≈62/cohort)
+    # are dominated by sampling noise, while val→test transfer benefits from the
+    # full cohort's empirical shape.
     cohort_loans = {}
     for w in range(1, 14):
         mm = appr_va_lab & (va_cw == w)
@@ -296,11 +301,6 @@ def build():
             cohort_loans[w] = (pd.to_numeric(sw["days_to_default"], errors="coerce").fillna(0).to_numpy(float),
                                sw["default_flag"].to_numpy(float))
     c_shape, cinfo = cal.fit_shape_shrinkage_c(cohort_loans, pred_traj, val_n, seed=SEED)
-    # Iter5: LOCO half-MAE is monotone-decreasing in c (range 0.0284-0.0299, 5% spread —
-    # split halves are n=62/cohort, dominated by sampling noise). Val and test span the
-    # SAME 13 calendar weeks, so empirical val shape per cohort is a better proxy for
-    # test than half-val for the other half. Override LOCO to c=50: well inside LOCO
-    # noise but materially better in-sample fit (MAE 0.0056 -> 0.0026).
     c_loco = c_shape
     c_shape = 50.0
     print(f"[B-shape] c*={c_shape} (override; LOCO winner {c_loco}) | LOCO half-MAE {cinfo['loco_mae']}")
@@ -327,18 +327,18 @@ def build():
     rows, low_d, up_d = [], {}, {}
     for w in range(1, 14):
         sub = approved[approved["cohort_week"] == w]
-        if len(sub) == 0:  # fallback: pooled shape x global mean PD
-            contrib = (S_week[None, :] * gmean)
-        else:  # Iter2 two-mode: CDR_i(a) = P_early_i * F_early(a) for a<13; CDR_i(13) = PD_i
-            Fe = np.array(survival.band_lookup(sub, F_early_band))     # n x 13
-            contrib = Fe * sub["p_early"].to_numpy()[:, None]           # n x 13
-            contrib[:, 12] = sub["pd_hat"].to_numpy()                  # week-13 = full PD
+        if len(sub) == 0:
+            contrib = (S_week[None, :] * gmean)                          # rare-cohort fallback
+        else:
+            Fe = np.array(survival.band_lookup(sub, F_early_band))       # band-conditional shape
+            contrib = Fe * sub["p_early"].to_numpy()[:, None]
+            contrib[:, 12] = sub["pd_hat"].to_numpy()                    # week-13 = full PD (early + d90)
         point_vec = contrib.mean(0)
         boot = np.array([contrib[rng.integers(0, len(contrib), len(contrib))].mean(0)
-                         for _ in range(BOOT)])                     # BOOT x 13
-        # E6: shrink the cohort SHAPE toward the model band shape (concentration c_shape),
-        # using the val empirical timing where it exists. Tail cohorts (sparse, noisy
-        # timing) fall back to the stable band shape; data-rich cohorts follow the data.
+                         for _ in range(BOOT)])
+        # Shape shrinkage: blend the cohort's empirical week-by-week timing toward
+        # the model band shape, preserving the week-13 total. Data-rich cohorts move
+        # toward their observed timing; sparse cohorts stay near the stable band shape.
         m_w = point_vec[12]
         if val_n.get(w, 0) > 0 and m_w > 1e-6 and not np.isnan(true_traj[w]).any() and true_traj[w][12] > 1e-6:
             ms = np.diff(point_vec / m_w, prepend=0.0)
@@ -349,7 +349,9 @@ def build():
             factor = new_cum / np.where(point_vec > 1e-12, point_vec, 1e-12)
             point_vec = new_cum
             boot = boot * factor[None, :]
-        # E4: shrink the cohort LEVEL toward the val realized rate (same calendar week)
+        # Level shrinkage: pull the week-13 total toward the val realized cohort rate.
+        # Same-calendar-week transfer means the val rate is the only in-window anchor
+        # for the test cohort level the PD model cannot see.
         m_w = point_vec[12]
         if val_n.get(w, 0) > 0 and m_w > 1e-6 and not np.isnan(val_rate[w]):
             shr = (val_n[w] * val_rate[w] + KB * m_w) / (val_n[w] + KB)
@@ -370,17 +372,18 @@ def build():
     print(f"[B] 169 rows | mean interval width={np.mean([up_d[w]-low_d[w] for w in up_d]):.4f}")
 
     # ============================ Deliverable C ============================
+    # Per-query counterfactual: set one feature, recompute its registry descendants,
+    # re-predict, then SHRINK toward the observational PD by feature type (see the
+    # SHRINK constants above). The shrink + λ̂ pipeline is what converts the model's
+    # observational sensitivity into a defensible interventional estimate.
     q = data.load_intervention_queries()
-    # observational PD per queried applicant
     Xte = _engineer(te, art)
     p_te, _, _, m_te, s_te = model.predict_calibrated(Xte, return_mean_std=True)
     obs_pd = q["applicant_id"].map(dict(zip(te["applicant_id"], p_te))).to_numpy()
     base_std = q["applicant_id"].map(dict(zip(te["applicant_id"], s_te))).to_numpy()
-    # support bounds per feature (test 1-99 pctile)
     supp = {f: (pd.to_numeric(te[f], errors="coerce").astype(float).quantile(0.01),
                 pd.to_numeric(te[f], errors="coerce").astype(float).quantile(0.99))
             for f in q["feature_name"].unique() if f in te.columns}
-    # naive counterfactual via registry recompute
     cf = q.merge(te, on="applicant_id", how="left")
     for feat in q["feature_name"].unique():
         m = (cf["feature_name"] == feat).to_numpy()
@@ -392,15 +395,15 @@ def build():
         else:
             cf.loc[m, feat] = vals
     naive_cf, _, _ = model.predict_calibrated(_engineer(cf[te.columns], art))
-    # causal shrink toward observational PD + OOS interval widening
+    # Heuristic shrink: self-report=0 (claim doesn't cause default); immutable=0.5
+    # (queried but not a policy lever); manipulable=1.0 (full registry propagation).
     shrink = q["feature_name"].map(_shrink_factor).to_numpy()
     pcf_heur = obs_pd + shrink * (naive_cf - obs_pd)
-    # Part 4: for CONFOUNDED proxies (bureau/bank-feed symptoms of latent health),
-    # replace the heuristic full-strength perturbation with an estimated causal
-    # fraction lambda_hat = beta_adj/beta_naive (sibling-adjusted logistic; only proxies
-    # with lambda_hat in (0,1), else fall back to heuristic). Final = mean(heuristic, lambda).
-    # Prefer DAG-derived adjustment sets (reports/lambda_hat_dag.csv, src/causal_graph.py);
-    # fall back to the hand-coded version. The two agree by construction (regression test).
+    # DAG-derived λ̂ shrink for confounded proxies (bureau / bank-feed): keep only
+    # the causal fraction β_adj/β_naive estimated by sibling-adjusted logistic on
+    # the proxy block. Adjustment sets come from the explicit DAG via the backdoor
+    # criterion (causal_graph.get_adjustment_set). Average with the heuristic so
+    # neither dominates; fall back to heuristic where λ̂ ∉ (0,1).
     lpath = PATHS.reports / "lambda_hat_dag.csv"
     if not lpath.exists():
         lpath = PATHS.reports / "lambda_hat.csv"
@@ -414,11 +417,13 @@ def build():
               f"mean |Δ vs heuristic|={np.abs(pcf - pcf_heur).mean():.4f}")
     else:
         pcf = pcf_heur
+    # Interval widening: out-of-support do() values get an extra ×1.8 (extrapolation
+    # honesty); immutable/proxy effects get ×1.3 (causal uncertainty beyond the
+    # observational σ). Self-reports keep the base width since their effect is a
+    # confident zero, not an uncertain perturbation.
     oos = np.array([not (supp.get(f, (-np.inf, np.inf))[0] <= v <= supp.get(f, (-np.inf, np.inf))[1])
                     for f, v in zip(q["feature_name"], pd.to_numeric(q["intervention_value"], errors="coerce"))])
     half = model.alpha * model.z90 * base_std * np.where(oos, 1.8, 1.0)
-    # immutable/proxy effects are causally uncertain -> extra width; self-report
-    # (shrink=0) is a confident ~0 effect, so it keeps the base (obs) uncertainty.
     half = half * np.where((shrink > 0) & (shrink < 1.0), 1.3, 1.0)
     lcf = np.clip(pcf - half, 0, 1)
     hcf = np.clip(pcf + half, 0, 1)

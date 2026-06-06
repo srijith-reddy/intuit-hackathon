@@ -1,40 +1,39 @@
 """Explicit causal DAG over the proxy block + outcome, and algorithmic backdoor
 adjustment-set derivation for Deliverable C.
 
-This generalizes the hand-coded ``DESCENDANTS`` exclusions in
-``audit/scripts/p4_lambda.py``: instead of listing which proxies to drop from each
-treatment's adjustment set, we encode the structure once as a DAG and let graph
-reachability (``networkx.descendants``) decide. The regression test at the bottom
-asserts the DAG reproduces the hand-coded fix as a special case.
+The structure is encoded ONCE as a `networkx.DiGraph`; per-treatment adjustment
+sets are derived by graph reachability (`networkx.descendants`) rather than
+hand-listed. This makes the causal assumptions inspectable, regression-testable,
+and easy to amend when new evidence about an edge arrives.
 
 Structure encoded
 -----------------
-* Latent ``H`` ("business health", unobserved) -> every proxy, every stated_* field,
-  and default. H is the confounder we cannot observe; conditioning on the *other*
-  proxies (co-children of H) is proxy adjustment for it.
-* Mechanistic proxy->proxy edges we defend AND the FDR partial-correlation graph
-  supports (reports/proxy_structure.md):
-    observed_cash_balance_p10 -> invoice_payment_delinquency_rate   (FDR r=-0.78)
-    observed_cash_balance_p10 -> observed_overdraft_count_3mo       (cash funds draws)
-    observed_monthly_revenue_avg_3mo -> payroll_regularity_score    (FDR r=+0.50)
-  The candidate edge observed_revenue_volatility -> observed_cash_balance_p10 is
-  NOT included: the FDR graph shows no surviving cash--volatility partial correlation,
-  so we do not assert that direction.
-* Every proxy -> default (the direct effects C tries to isolate); H -> default.
-* requested_amount -> {derived affordability features} -> default (mechanical, full path).
-* stated_* : H -> stated_*, but NO stated_* -> default (a claim does not cause default).
+* Latent `H` ("business health", unobserved) → every proxy, every stated_* field,
+  and default. `H` is the unobservable confounder; conditioning on the OTHER proxies
+  (co-children of `H`) is the proxy-adjustment workaround.
+* Mechanistic proxy→proxy edges defended by both the mechanism and the FDR
+  partial-correlation graph in reports/proxy_structure.md:
+    observed_cash_balance_p10 → invoice_payment_delinquency_rate    (FDR r=-0.78)
+    observed_cash_balance_p10 → observed_overdraft_count_3mo        (cash funds draws)
+    observed_monthly_revenue_avg_3mo → payroll_regularity_score     (FDR r=+0.50)
+  The candidate edge observed_revenue_volatility → observed_cash_balance_p10 is
+  NOT asserted: FDR partial-correlation is not significant.
+* Every proxy → default (the direct effects C tries to isolate); H → default.
+* requested_amount → {derived affordability features} → default (mechanical path).
+* stated_*: H → stated_*, but NO stated_* → default (a claim does not cause default).
 
-Adjustment rule (backdoor, latent-H proxy adjustment)
------------------------------------------------------
-For a proxy treatment X, condition on its co-proxies of H, EXCLUDING descendants of X
-(conditioning on a descendant/mediator blocks part of the X->default path and
-over-shrinks the causal fraction). Descendants are read off the graph.
+Adjustment rule
+---------------
+For a proxy treatment `X`, condition on its co-proxies of `H`, EXCLUDING graph
+descendants of `X` — conditioning on a descendant/mediator blocks part of the
+true `X → default` path and over-shrinks the causal fraction `λ̂`.
 """
 from __future__ import annotations
 
 import networkx as nx
 
-# Proxy block (identical to audit/scripts/p4_lambda.py).
+# Proxy block: the bureau / bank-feed / behavioral signals that act as
+# observable proxies for the latent business-health confounder H.
 BUREAU = ["aggregate_credit_utilization", "recent_inquiries_count_6mo",
           "existing_debt_obligations", "owner_personal_credit_band"]
 FEED = ["observed_monthly_revenue_avg_3mo", "observed_revenue_trend_3mo",
@@ -97,13 +96,14 @@ def get_adjustment_set(treatment: str, graph: nx.DiGraph | None = None) -> list[
 
 
 def regression_columns(treatment: str, graph: nx.DiGraph | None = None) -> list[str]:
-    """Columns for the sibling-adjusted logistic: treatment + its adjustment set
-    (equals the old `block minus DESCENDANTS[treatment]`)."""
+    """Columns for the sibling-adjusted logistic: treatment + its adjustment set."""
     return [treatment] + get_adjustment_set(treatment, graph)
 
 
-# Hand-coded exclusions from p4_lambda.py — the DAG must reproduce these exactly.
-_HANDCODED_DESCENDANTS = {
+# Expected exclusions per treatment, derived directly from the MECHANISTIC_EDGES
+# above (every named edge X → Y excludes Y from X's adjustment set). Asserted by
+# the self-test so any future edge addition without updating this dict fails loudly.
+_EXPECTED_DESCENDANTS = {
     "observed_cash_balance_p10": ["invoice_payment_delinquency_rate",
                                   "observed_overdraft_count_3mo"],
     "observed_monthly_revenue_avg_3mo": ["payroll_regularity_score"],
@@ -111,22 +111,20 @@ _HANDCODED_DESCENDANTS = {
 
 
 def _self_test() -> None:
-    """Assert the DAG reproduces the hand-coded DESCENDANTS exclusions."""
+    """Regression-test: graph reachability reproduces the expected exclusions."""
     for X in PROXY_BLOCK:
         adj = set(get_adjustment_set(X))
         excluded = set(PROXY_BLOCK) - {X} - adj
-        expected = set(_HANDCODED_DESCENDANTS.get(X, []))
+        expected = set(_EXPECTED_DESCENDANTS.get(X, []))
         assert excluded == expected, (
-            f"{X}: DAG excludes {excluded}, hand-coded excludes {expected}")
-    # explicit named regression checks
+            f"{X}: DAG excludes {excluded}, expected {expected}")
     cash = get_adjustment_set("observed_cash_balance_p10")
     assert "invoice_payment_delinquency_rate" not in cash
     assert "observed_overdraft_count_3mo" not in cash
     rev = get_adjustment_set("observed_monthly_revenue_avg_3mo")
     assert "payroll_regularity_score" not in rev
-    # stated_* have no path to default except through H (no direct edge)
     assert not DAG.has_edge("stated_annual_revenue", "default")
-    print("causal_graph self-test PASS: DAG reproduces hand-coded DESCENDANTS exclusions")
+    print("causal_graph self-test PASS")
 
 
 if __name__ == "__main__":

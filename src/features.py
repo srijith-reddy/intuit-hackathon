@@ -518,10 +518,10 @@ def load_artifacts(path: Path | None = None) -> dict:
         return pickle.load(fh)
 
 
-# Near-perfect duplicates (corr >= 0.95) found in the redundancy audit. Kept as
-# registry nodes (useful semantic parents for do() propagation) but dropped from the
-# MODEL matrix so SHAP attribution isn't split across collinear twins (helps the
-# regulator-facing driver story). Each maps dropped -> the twin we keep.
+# Near-perfect duplicates (Pearson |r| ≥ 0.95) of other features. Kept as registry
+# nodes — they are useful semantic parents for `do()` propagation — but dropped
+# from the model matrix so SHAP attribution isn't split across collinear twins
+# and the regulator-facing driver ranking stays clean. Each comment notes the twin.
 REDUNDANT_DROP = [
     "daily_payment",            # ≡ raw_requested_amount (scalar multiple)
     "req_to_obs_annual",        # ≡ payment_to_revenue (same ratio)
