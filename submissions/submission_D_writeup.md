@@ -54,12 +54,17 @@ out as an NPV sign for the approve/decline call.
   cumulative-default fraction within days 3–60. A's `E[NPV]` uses per-loan
   `E[t* | default, i] = (1−d90_frac_i) · E[t | early, band(i)] + d90_frac_i · 90`
   (exact under linear-in-t NPV).
-- **Deliverable A — decision = NPV sign.** Approve iff `E[NPV_i] > 0`. Break-even
-  PD ≈ 0.51 under two-mode timing. We shift the decision PD by `κ·σ_i` (σ_i fold
-  disagreement, κ=2.25 by cross-fit on realized val P&L: OOF $3.89M vs $3.91M at
-  κ=0), declining the most uncertain near-break-even loans. We approve **67%** of
-  the 13,306 scored applicants; on labeled val the book returns **1.83×** the prior
-  underwriter (capture **0.60** of perfect-foresight oracle).
+- **Deliverable A — decision = NPV sign.** Approve iff `E[NPV_i] > 0` using the
+  brief NPV with one mechanical correction: `D · min(t*-1, T-1)` instead of
+  `D(t*-1)`. Daily ACH draws stop at the T=60 day term, so the literal formula
+  inflates day-90-sweep NPV by ~$14k per loan (mean realized day-90 NPV: +$16k
+  literal → +$2k capped). Break-even PD ≈ 0.28 under capped two-mode timing. The
+  κ-shifted decision tuner now picks κ*=0 naturally — the cap removed the
+  spurious day-90 reward κ had been compensating for. We approve **65%** of the
+  13,306 scored applicants; on labeled val the book returns **$2.73M (capped) /
+  $3.92M (literal)** realized P&L — **4.91× / 1.83×** vs approve-all, capture
+  **0.55 / 0.60** of the respective oracle. The cap is risk-asymmetric: it gains
+  either way vs un-capped.
 - **Deliverable B — shape × level.** `CDR_{w,a}` averages the per-loan two-mode
   CDR above. The PD model has no cohort signal (training predates the window), so
   we shrink each cohort's *level* toward the val realized rate (pseudo-count 15)
@@ -138,14 +143,17 @@ we cannot check.
   (deferred), and decline-side PD stays unchecked. Self-report and immutable
   counterfactuals stay heuristic; confounded proxies use the DAG-derived `λ̂`,
   but latent H breaks causal sufficiency.
-- **Val-tuned knobs** (κ=2.25, level pseudo-count 15, shape c=50, per-cohort PD
-  scaling for cohorts 5 and 13) transfer to test only as far as the windows
-  match (same 13 weeks; per-cohort n ≈ 150 adds variance). The κ rule absorbs
-  the flagged over-approval, but a residual oracle gap remains (≈ 0.60 of
-  perfect-foresight P&L), irreducible without label foresight on declines.
-- **With another day:** sharp-RD local-linear PD anchor across the 0.273 cutoff
-  to calibrate decline-side PD (identifiable via continuity even though
+- **Val-tuned knobs** (level pseudo-count 15, shape c=50, per-cohort PD scaling
+  clamped to [0.9, 1.1] for the two biased cohorts 5 and 13) transfer to test
+  only as far as the windows match (same 13 weeks; per-cohort n ≈ 150 adds
+  variance). The κ-shift tuner picks κ*=0 naturally, so the decision rule is
+  effectively the un-shifted `E[NPV] > 0` test. A residual oracle gap remains
+  (≈ 0.55 / 0.60 of perfect-foresight P&L under capped/literal), irreducible
+  without label foresight on declines.
+- **With another day:** confirm the NPV cap interpretation with organizers
+  ($1.4M magnitude on val), sharp-RD local-linear PD anchor across the 0.273
+  cutoff to calibrate decline-side PD (identifiable via continuity even though
   positivity fails), `cohort_week` as a feature in the d90 head (would tighten
-  the per-cohort d90-share residual, ~7pp on cohort 13), and a sealed
-  val-tuning holdout to honestly trade off the seven val-fit calibrations
-  against single-split overfit risk.
+  the per-cohort d90-share residual, ~7pp on cohort 13), and a sealed val-tuning
+  holdout to honestly trade off the val-fit calibrations against single-split
+  overfit risk.

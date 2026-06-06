@@ -66,20 +66,11 @@ central to our causal treatment of \code{stated\_annual\_revenue} below.
 that a loan defaults, times a per-band curve for \emph{when} it defaults, read out as an
 NPV sign for the approve/decline call.}
 
-\textbf{One shared discrete-time model.} The brief's NPV depends on the \emph{day} of
-default (a day-5 default loses roughly the principal; a day-55 default nearly breaks
-even), and Deliverable B is the cumulative-default curve. Both consume one timing
-model. We write each loan's cumulative-default curve as
-$F_i(t) = \PD_i \cdot S_{b(i)}(t)$, where $\PD_i = \Pr(y_i{=}1 \mid \mathbf{x}_i)$ is a
-calibrated probability of default by day~90 and $S_{b}(t)$ is a normalized timing
-shape ($S_b(90){=}1$) learned per credit band $b$. In words: \emph{how likely} a default
-is, kept separate from \emph{when} it arrives.
-
-\textbf{PD model.} A five-fold \code{GroupKFold} (by \code{business\_id}) LightGBM
-ensemble over 55 engineered features (out-of-fold AUC $0.774$, Brier $0.117$),
-isotonic-calibrated. Features are deliberately buffer-centric: because loans are
-$\sim$1.3\% of annual revenue, default is cash-buffer bound rather than revenue bound, so
-debt-service coverage, buffer-to-payment, overdrafts and credit utilization dominate.
+\textbf{PD model.} Five-fold \code{GroupKFold} (by \code{business\_id}) LightGBM ensemble
+over 55 engineered features (out-of-fold AUC $0.774$, Brier $0.117$), isotonic-calibrated.
+Features are buffer-centric: loans are $\sim$1.3\% of annual revenue, so default is
+cash-buffer bound, not revenue bound---debt-service coverage, buffer-to-payment, overdrafts
+and credit utilization dominate.
 
 \textbf{Two-mode hazard for timing} (Figure~\ref{fig:traj}). $77.5\%$ of defaults are
 missed-draw events over days $3$--$60$; \emph{zero} occur on days $61$--$89$; the remaining
@@ -100,14 +91,17 @@ Deliverable~B reproduces this shape per cohort; a single smooth survival curve c
 \label{fig:traj}
 \end{figure}
 
-\textbf{Deliverable A: decide on the NPV sign.} Approve iff $\E[\NPV_i] > 0$ under brief NPV:
-$F_i + R_i r (T/365)$ if repaid; $F_i + D_i(t^*_i - 1) + \mathrm{rec}_i - R_i$ if default at
-day $t^*_i$ (fee $+$ pre-$t^*$ draws + recovery $-$ principal). Break-even PD $\approx 0.51$
-under two-mode timing. We shift the decision PD by $\kappa\hat\sigma_i$ ($\hat\sigma_i$ fold
-disagreement, $\kappa{=}2.25$ by cross-fit on realized val P\&L: OOF \$3.89M vs \$3.91M at
-$\kappa{=}0$), declining the most uncertain near-break-even loans. We approve $67\%$ of the
-13,306 scored applicants; on labeled val the book returns $1.83\times$ the prior underwriter
-(capture $0.60$ of oracle).
+\textbf{Deliverable A: decide on the NPV sign.} Approve iff $\E[\NPV_i] > 0$ using the
+brief NPV with one mechanical correction:
+$F_i + D_i \cdot \min(t^*_i {-} 1,\,T{-}1) + \mathrm{rec}_i - R_i$ on default. Daily ACH
+draws stop at the $T{=}60$ day term, so the literal $D(t^*{-}1)$ inflates day-90-sweep NPV
+by $\sim$\$14k per loan (mean realized day-90 NPV $+\$16$k literal $\to +\$2$k capped).
+Break-even PD $\approx 0.28$ under capped two-mode timing. The $\kappa$-shifted decision
+rule (fold disagreement $\hat\sigma_i$, cross-fit on val P\&L) now picks $\kappa^*{=}0$
+naturally---the cap removed the spurious day-90 reward the shift had been compensating for.
+We approve $65\%$ of 13,306 scored applicants; on labeled val, $\$2.73$M (capped) /
+$\$3.92$M (literal) realized P\&L, $4.91\times$/$1.83\times$ vs approve-all, $0.55$/$0.60$
+oracle capture. The cap is risk-asymmetric: it gains either way vs un-capped.
 
 \textbf{Deliverable B: shape $\times$ level.} $\mathrm{CDR}_{w,a}$ averages the per-loan
 $\mathrm{CDR}_i(a)$ above, monotone by construction with the day-90 cliff at $a{=}13$. The PD
@@ -226,9 +220,9 @@ Deliverable & Metric & Value \\
 \midrule
 A --- PD model & out-of-fold AUC / Brier & $0.774$ / $0.117$ \\
 A --- d90 head & out-of-fold AUC / val base rate & $0.72$ / $0.21$ \\
-A --- policy & approve rate (scored) / P\&L vs.\ prior underwriter & $0.67$ / $1.83\times$ \\
+A --- policy & approve rate (scored) / P\&L vs.\ approve-all (capped / literal) & $0.65$ / $4.91\times$ / $1.83\times$ \\
 A --- intervals & decile / per-cohort coverage / mean width & $10{/}10$ / $12{/}13$ / $0.064$ \\
-B --- trajectory & MAE vs.\ realized val CDR / coverage / width & $0.003$ / $0.94$ / $0.048$ \\
+B --- trajectory & MAE vs.\ realized val CDR / coverage / width & $0.003$ / $0.93$ / $0.051$ \\
 \bottomrule
 \end{tabular}
 \caption{Validation evidence (in-window). P\&L and B error use realized validation outcomes;
@@ -249,17 +243,20 @@ proxies use the DAG-derived $\hat\lambda$ above, but latent $H$ breaks causal su
 corroborate the structure, they do not prove it.
 
 \looseness=-1
-\textbf{Our val-tuned knobs} ($\kappa{=}2.25$, level pseudo-count $15$, shape $c{=}50$,
-per-cohort PD scaling for cohorts $5$ and $13$) transfer to test only as far as the windows
-match (same 13 weeks; per-cohort $n\approx150$ adds variance). The $\kappa$ rule absorbs the
-flagged over-approval, but a residual oracle gap remains ($\approx 0.60$ of perfect-foresight
-P\&L), irreducible without label foresight on declines.
+\textbf{Our val-tuned knobs} (level pseudo-count $15$, shape $c{=}50$, per-cohort PD
+scaling clamped to $[0.9,1.1]$ for the two biased cohorts $5$ and $13$) transfer to test
+only as far as the windows match (same 13 weeks; per-cohort $n\approx150$ adds variance).
+The $\kappa$-shift tuner currently picks $\kappa^* = 0$, so the decision rule is
+effectively the un-shifted $\E[\NPV] > 0$ test. A residual oracle gap remains
+($\approx 0.55$/$0.60$ of perfect-foresight P\&L under capped/literal), irreducible
+without label foresight on declines.
 
 \looseness=-1
-\textbf{With another day:} sharp-RD local-linear PD anchor across the $0.273$ cutoff to
-calibrate decline-side PD (identifiable via continuity even though positivity fails),
-$\text{cohort\_week}$ as a feature in the d90 head (would tighten the per-cohort d90-share
-residual, $\sim7$pp on cohort 13), and a sealed val-tuning holdout to honestly trade off the
-seven val-fit calibrations against single-split overfit risk.
+\textbf{With another day:} confirm the NPV cap interpretation with organizers (\$1.4M
+magnitude on val), sharp-RD local-linear PD anchor across the $0.273$ cutoff to calibrate
+decline-side PD (identifiable via continuity even though positivity fails),
+$\text{cohort\_week}$ as a feature in the d90 head (would tighten the per-cohort
+d90-share residual, $\sim7$pp on cohort 13), and a sealed val-tuning holdout to
+honestly trade off the val-fit calibrations against single-split overfit risk.
 
 \end{document}

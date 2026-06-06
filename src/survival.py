@@ -115,36 +115,43 @@ def band_lookup(df: pd.DataFrame, table: dict, default_key: str = "pooled"):
 # at week 9 (day 63 is past the early window) so weeks 9-13 are flat at 1, matching
 # the data's deterministic dead zone.
 # --------------------------------------------------------------------------- #
+# Early-default window per the two-mode definition: missed-draw defaults occur in
+# days [3, 60] (the rule requires ≥3 missed daily draws, so days 1-2 are impossible
+# and days 61-89 have zero observed defaults — the dead zone before the day-90 sweep).
+EARLY_MIN_DAY, EARLY_MAX_DAY = 3, 60
+
+
+def _early_days(g: pd.DataFrame) -> np.ndarray:
+    """Defaulter days_to_default restricted to the early window [3, 60]."""
+    dtd = pd.to_numeric(g["days_to_default"], errors="coerce").to_numpy()
+    return dtd[(dtd >= EARLY_MIN_DAY) & (dtd <= EARLY_MAX_DAY)]
+
+
 def early_cumulative_shape(train: pd.DataFrame, n_weeks: int = 13) -> np.ndarray:
-    """F_early(a) for a=1..13: fraction of EARLY defaults (days 3-60) seen by day 7a,
-    normalized to 1 at week 9 (day 63 — past the early window). Weeks 9-13 all == 1."""
-    d = train.loc[data.labeled_mask(train) & (train["default_flag"] == 1)]
-    dtd = pd.to_numeric(d["days_to_default"], errors="coerce").to_numpy()
-    early = dtd[dtd <= 60]
+    """F_early(a) for a=1..13: fraction of EARLY defaults seen by day 7a, normalized
+    to 1 at week 9 (day 63 — past the early window). Weeks 9-13 all == 1."""
+    early = _early_days(train.loc[data.labeled_mask(train) & (train["default_flag"] == 1)])
     if len(early) == 0:
         return np.ones(n_weeks)
     out = np.zeros(n_weeks)
     for a in range(1, n_weeks + 1):
-        cap = min(7 * a, 60)
+        cap = min(7 * a, EARLY_MAX_DAY)
         out[a - 1] = (early <= cap).sum() / len(early)
-    return out  # weeks 9..13 == 1 by construction (cap clipped to 60)
+    return out
 
 
 def mean_early_default_day(train: pd.DataFrame) -> float:
-    """E[t* | default, t* <= 60] — the early-window mean day (pooled fallback)."""
-    d = train.loc[data.labeled_mask(train) & (train["default_flag"] == 1)]
-    dtd = pd.to_numeric(d["days_to_default"], errors="coerce").to_numpy()
-    early = dtd[dtd <= 60]
-    return float(early.mean()) if len(early) else 32.0
+    """E[t* | default, early window]. Pooled fallback for the band-conditional table."""
+    early = _early_days(train.loc[data.labeled_mask(train) & (train["default_flag"] == 1)])
+    return float(early.mean()) if len(early) else float((EARLY_MIN_DAY + EARLY_MAX_DAY) / 2)
 
 
 def mean_early_default_day_by_band(train: pd.DataFrame) -> dict:
-    """{band: E[t*|default, t*<=60, band]}; plus 'pooled' fallback."""
+    """{band: E[t*|default, early, band]}; plus 'pooled' fallback for unseen bands."""
     out = {"pooled": mean_early_default_day(train)}
     d = train.loc[data.labeled_mask(train) & (train["default_flag"] == 1)]
     for b, g in d.groupby(SEG_COL):
-        dd = pd.to_numeric(g["days_to_default"], errors="coerce").to_numpy()
-        early = dd[dd <= 60]
+        early = _early_days(g)
         if len(early) < 50:
             continue
         out[int(b)] = float(early.mean())
@@ -156,13 +163,12 @@ def early_cumulative_shape_by_band(train: pd.DataFrame, n_weeks: int = 13) -> di
     out = {"pooled": early_cumulative_shape(train, n_weeks)}
     d = train.loc[data.labeled_mask(train) & (train["default_flag"] == 1)]
     for b, g in d.groupby(SEG_COL):
-        dd = pd.to_numeric(g["days_to_default"], errors="coerce").to_numpy()
-        early = dd[dd <= 60]
+        early = _early_days(g)
         if len(early) < 50:
             continue
         cum = np.zeros(n_weeks)
         for a in range(1, n_weeks + 1):
-            cap = min(7 * a, 60)
+            cap = min(7 * a, EARLY_MAX_DAY)
             cum[a - 1] = (early <= cap).sum() / len(early)
         out[int(b)] = cum
     return out
